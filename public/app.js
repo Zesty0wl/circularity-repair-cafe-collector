@@ -81,9 +81,9 @@
       }
       sub.textContent =
         (cafes.length === 1
-          ? 'One café has asked to appear here'
-          : cafes.length + ' cafés have asked to appear here') +
-        ', and each one proved it runs the site it claims. Click a pin for its numbers.';
+          ? 'One café has asked to appear here.'
+          : cafes.length + ' cafés have asked to appear here.') +
+        ' Click a pin for its numbers.';
 
       var map = L.map('map', { scrollWheelZoom: false });
       L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {

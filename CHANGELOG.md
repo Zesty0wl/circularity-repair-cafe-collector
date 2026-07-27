@@ -2,6 +2,14 @@
 
 Notable changes to the Repair Cafe Hub telemetry collector. Newest first.
 
+## 2.0.2 — 27 July 2026
+
+### Changed
+
+- Trimmed the line above the map. It now reads "One café has asked to appear
+  here. Click a pin for its numbers." How a café got there is explained further
+  down the page, so saying it twice on the map only got in the way.
+
 ## 2.0.1 — 27 July 2026
 
 ### Fixed
