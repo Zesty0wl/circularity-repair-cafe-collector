@@ -34,6 +34,7 @@
       text('s-co2', weight(d.co2SavedKg));
       text('s-sessions', compact(d.sessionsHeld));
       text('s-volunteers', compact(d.volunteers));
+      text('s-recorded', compact(d.repairsRecorded));
       text('s-cafes', nf.format(d.installs));
       text('s-rate', d.successRate + '%');
       var note = d.note;
@@ -51,6 +52,7 @@
     })
     .catch(function () {
       text('note', 'The figures could not be loaded just now. Please try again shortly.');
+      text('s-fixed', '—');
       document.getElementById('stats').setAttribute('aria-busy', 'false');
     });
 

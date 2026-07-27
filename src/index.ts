@@ -1,4 +1,7 @@
 import Fastify from 'fastify';
+import type { FastifyReply } from 'fastify';
+import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import rateLimit from '@fastify/rate-limit';
 import staticPlugin from '@fastify/static';
 import path from 'node:path';
@@ -21,6 +24,14 @@ const app = Fastify({
   },
   trustProxy,
   bodyLimit: env.MAX_BODY_KB * 1024,
+});
+
+// node-postgres emits 'error' on the pool when an idle connection dies, and an
+// unhandled 'error' event ends the process. A database restart therefore took
+// the collector down and left it down. Losing a connection is normal; the pool
+// makes a new one, and all this has to do is not be fatal.
+pool.on('error', (err) => {
+  app.log.warn({ err }, 'database connection dropped, the pool will reconnect');
 });
 
 async function start(): Promise<void> {
@@ -48,13 +59,41 @@ async function start(): Promise<void> {
   const publicDir = path.resolve(here, '..', 'public');
   const leafletDir = path.resolve(here, '..', 'node_modules', 'leaflet', 'dist');
 
+  // The page is served by hand rather than as a static index, so the asset
+  // links can carry the app version. Without that, Cloudflare happily serves a
+  // four-hour-old stylesheet against freshly deployed markup, and the page
+  // looks broken in a way nothing in the container can explain.
+  // The token is a hash of the assets themselves, not the package version.
+  // Deriving it from the version meant a stylesheet could change without the
+  // URL changing, and Cloudflare went on serving the old one against new
+  // markup: the page looked broken and nothing in the container explained it.
+  // A content hash cannot be forgotten about.
+  const assetHash = createHash('sha256')
+    .update(fs.readFileSync(path.join(publicDir, 'styles.css')))
+    .update(fs.readFileSync(path.join(publicDir, 'app.js')))
+    .digest('hex')
+    .slice(0, 12);
+  const pageHtml = fs
+    .readFileSync(path.join(publicDir, 'index.html'), 'utf8')
+    .replaceAll('__V__', assetHash);
+
+  const sendPage = async (_request: unknown, reply: FastifyReply) => {
+    // The markup is small and must never be stale, because it names the asset
+    // versions. The assets themselves are immutable per version.
+    void reply.header('Cache-Control', 'no-cache');
+    void reply.type('text/html; charset=utf-8');
+    return pageHtml;
+  };
+  app.get('/', sendPage);
+  app.get('/index.html', sendPage);
+
   await app.register(staticPlugin, {
     root: publicDir,
     prefix: '/',
-    index: ['index.html'],
-    // The page changes rarely, its data does not come from here.
+    index: false,
     cacheControl: true,
-    maxAge: '1h',
+    // Safe to hold on to: the URL changes when the version does.
+    maxAge: '7d',
   });
   await app.register(staticPlugin, {
     root: leafletDir,

@@ -2,6 +2,31 @@
 
 Notable changes to the Repair Cafe Hub telemetry collector. Newest first.
 
+## 1.2.0 — 27 July 2026
+
+### Changed
+
+- Rebuilt the layout of the public page. One hero figure leads, six supporting
+  tiles fill a grid without stranding one on a row of its own, and the map sits
+  beside the list of cafés rather than above it. Every section now lines up on
+  one left edge.
+
+### Fixed
+
+- The page had no vertical spacing at all: every band ran into the next. Both
+  `.wrap` and `.section` were on the same element, and `.wrap { padding: 0 20px }`
+  beat `section { padding: 44px 0 }` on specificity, so the vertical padding was
+  silently discarded. The two now do one job each and are never combined.
+- A dropped database connection killed the process. node-postgres emits `error`
+  on the pool when an idle connection dies, and an unhandled `error` event ends
+  Node, so a database restart took the collector down and left it down. Losing a
+  connection is normal and is now logged and recovered from.
+- Stylesheet and script URLs carry a hash of their own contents. They were
+  versioned from `package.json`, which meant changing a stylesheet without
+  bumping the version left the URL identical, Cloudflare went on serving the old
+  file against new markup, and the page looked broken with nothing in the
+  container to explain it. A content hash cannot be forgotten about.
+
 ## 1.1.0 — 27 July 2026
 
 ### Added

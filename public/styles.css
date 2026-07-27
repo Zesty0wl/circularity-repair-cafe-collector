@@ -1,103 +1,254 @@
-/* Circularity teal, matching the hub's default brand colour. Deliberately
-   plain: this page is one screen of numbers and a map, and it should load on a
-   phone in a hall with two bars of signal. No fonts are fetched. */
+/* One screen of numbers and a map. Deliberately plain: no web fonts, no
+   framework, nothing fetched from anywhere else, so it loads on a phone in a
+   hall with two bars of signal.
+
+   Layout rule, learned the hard way: `.wrap` only ever does horizontal
+   centring and `.section` only ever does vertical rhythm, and no element
+   carries both. Putting them on one element meant `.wrap { padding: 0 20px }`
+   overrode `section { padding: 44px 0 }` on specificity, every band lost its
+   vertical padding, and the whole page ran together. */
+
 :root {
   --brand: #1b6b5a;
-  --brand-dark: #11443a;
-  --brand-tint: #edf3f2;
-  --ink: #0f172a;
-  --muted: #64748b;
-  --line: #e2e8f0;
+  --brand-deep: #11443a;
+  --brand-tint: #eef4f2;
+
+  --ink: #10201c;          /* primary text */
+  --ink-2: #4a5f59;        /* secondary text */
+  --ink-3: #6d817b;        /* muted text */
+  --surface: #ffffff;
   --paper: #fbfbf9;
+  --line: #dfe7e4;
+
+  --radius: 14px;
+  --gap: 20px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --brand: #2f8d78;
+    --brand-deep: #8fd4c1;
+    --brand-tint: #14201d;
+    --ink: #e8f0ed;
+    --ink-2: #a9bdb7;
+    --ink-3: #8ba09a;
+    --surface: #16221f;
+    --paper: #0e1613;
+    --line: #263833;
+  }
 }
 
 * { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
 
 body {
   margin: 0;
   background: var(--paper);
   color: var(--ink);
   font: 16px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  -webkit-text-size-adjust: 100%;
 }
 
-.wrap { max-width: 1000px; margin: 0 auto; padding: 0 20px; }
+/* ── The two layout primitives, kept apart ─────────────────────────── */
+.wrap { max-width: 1040px; margin-inline: auto; padding-inline: var(--gap); }
+/* Long prose is capped by the paragraph, not by narrowing the column: the
+   left edge has to line up with every other section down the page. */
+.prose p { max-width: 68ch; }
+.section { padding-block: 56px; }
+.band {
+  background: var(--brand-tint);
+  border-block: 1px solid var(--line);
+}
 
-/* ── Hero ─────────────────────────────────────────────────────────── */
+h1, h2, h3 { line-height: 1.2; text-wrap: balance; }
+h2 { font-size: 1.5rem; margin: 0 0 6px; color: var(--ink); }
+h3 { font-size: 1rem; margin: 0 0 10px; color: var(--ink); }
+p { margin: 0 0 1rem; }
+p:last-child { margin-bottom: 0; }
+a { color: var(--brand); }
+a:hover { color: var(--brand-deep); }
+
+/* ── Hero ──────────────────────────────────────────────────────────── */
 .hero {
   background: var(--brand);
   color: #fff;
-  padding: 56px 0 48px;
+  padding-block: 64px 56px;
 }
-.hero h1 { margin: 8px 0 0; font-size: clamp(1.8rem, 5vw, 2.8rem); line-height: 1.15; }
+.hero h1 { margin: 10px 0 0; font-size: clamp(1.9rem, 5vw, 3rem); }
 .eyebrow {
-  margin: 0; text-transform: uppercase; letter-spacing: .16em;
-  font-size: .72rem; font-weight: 700; color: rgba(255,255,255,.75);
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: .16em;
+  font-size: .72rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, .78);
 }
-.lede { margin: 14px 0 0; max-width: 46rem; color: rgba(255,255,255,.9); font-size: 1.05rem; }
+.lede { margin: 16px 0 0; max-width: 52ch; text-wrap: pretty; color: rgba(255, 255, 255, .92); font-size: 1.06rem; }
 
-/* ── Sections ─────────────────────────────────────────────────────── */
-main section { padding: 44px 0; }
-.band { background: var(--brand-tint); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); max-width: none; padding-left: 0; padding-right: 0; }
-.band > * { max-width: 1000px; margin-left: auto; margin-right: auto; padding-left: 20px; padding-right: 20px; }
-h2 { font-size: 1.5rem; margin: 0 0 6px; color: var(--brand-dark); }
-h3 { font-size: 1rem; margin: 0 0 8px; color: var(--brand-dark); }
-.sub { margin: 0 0 18px; color: var(--muted); }
+/* ── Figures ───────────────────────────────────────────────────────── */
+/* One hero number leads; the rest support it. Exactly one hero per page. */
+.figures {
+  display: grid;
+  gap: var(--gap);
+  grid-template-columns: 1fr;
+  align-items: stretch;
+}
+@media (min-width: 760px) {
+  .figures { grid-template-columns: minmax(240px, 1fr) 2fr; }
+}
 
-/* ── Numbers ──────────────────────────────────────────────────────── */
+.hero-figure {
+  background: var(--brand);
+  color: #fff;
+  border-radius: var(--radius);
+  padding: 28px 24px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.hero-value {
+  margin: 0;
+  /* Proportional figures, not tabular: at display sizes tabular digits give
+     every glyph the width of a zero and the number looks loose. */
+  font-size: clamp(3rem, 9vw, 4.25rem);
+  font-weight: 650;
+  line-height: 1;
+  letter-spacing: -.02em;
+}
+.hero-label { margin: 10px 0 0; font-size: .95rem; color: rgba(255, 255, 255, .85); }
+
 .stats {
-  display: grid; gap: 14px; margin: 0;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  grid-template-columns: repeat(2, 1fr);
+}
+@media (min-width: 760px) {
+  /* Three across, so six tiles make two full rows. auto-fit fitted four and
+     left the last one stranded on a row of its own. */
+  .stats { grid-template-columns: repeat(3, 1fr); }
 }
 .stat {
-  background: #fff; border: 1px solid var(--line); border-radius: 14px;
-  padding: 18px 14px; text-align: center;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 8px;
 }
+/* Label above value: a dl reads dt then dd, and the label is the thing you
+   scan for. */
+.stat dt { font-size: .8rem; color: var(--ink-3); }
 .stat dd {
-  margin: 0; font-size: clamp(1.5rem, 4vw, 2.1rem); font-weight: 700;
-  color: var(--brand-dark); line-height: 1.1; font-variant-numeric: tabular-nums;
+  margin: 0;
+  font-size: 1.7rem;
+  font-weight: 650;
+  line-height: 1.05;
+  color: var(--ink);
 }
-.stat dt { margin-top: 6px; font-size: .82rem; color: var(--muted); }
-.note { margin: 16px 0 0; font-size: .85rem; color: var(--muted); max-width: 46rem; }
+.stat dd sub, .stat dt sub { font-size: .7em; }
 
-/* ── Map ──────────────────────────────────────────────────────────── */
+.note {
+  margin: 22px 0 0;
+  font-size: .88rem;
+  color: var(--ink-3);
+  max-width: 68ch;
+}
+
+/* ── Map ───────────────────────────────────────────────────────────── */
+.sub { margin: 0 0 20px; color: var(--ink-2); }
+.map-layout {
+  display: grid;
+  gap: var(--gap);
+  grid-template-columns: 1fr;
+}
+@media (min-width: 860px) {
+  /* The list sits beside the map and scrolls to match its height, so the
+     section keeps one clean rectangle however many cafés there are. */
+  .map-layout { grid-template-columns: 1.7fr 1fr; align-items: start; }
+  .cafe-list { max-height: 460px; overflow-y: auto; }
+}
+
 #map {
-  height: 440px; border-radius: 14px; border: 1px solid var(--line);
-  background: #eef2f5; z-index: 0;
+  height: 460px;
+  min-height: 300px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--brand-tint);
+  z-index: 0;
 }
-.leaflet-container { font: inherit; }
-.pin {
-  display: flex; align-items: center; justify-content: center;
-  width: 26px; height: 26px; border-radius: 50%;
-  background: var(--brand); color: #fff; font-weight: 700; font-size: 11px;
-  border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.35);
-}
-.cafe-list { list-style: none; padding: 0; margin: 18px 0 0; display: grid; gap: 8px;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
-.cafe-list li {
-  background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px;
-}
-.cafe-list b { display: block; color: var(--brand-dark); }
-.cafe-list span { font-size: .85rem; color: var(--muted); }
-.cafe-list a { color: var(--brand); }
+.leaflet-container { font: inherit; background: var(--brand-tint); }
+.leaflet-popup-content { margin: 12px 14px; }
+.leaflet-popup-content b { display: block; margin-bottom: 2px; }
 
-/* ── Text blocks ──────────────────────────────────────────────────── */
-.cols { display: grid; gap: 28px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
-.cols ul { margin: 0; padding-left: 1.1rem; }
-.cols li { margin-bottom: 6px; }
-code { background: #fff; border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; font-size: .9em; }
-a { color: var(--brand); }
-.links { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 18px; }
+.pin {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--brand);
+  color: #fff;
+  font-weight: 700;
+  font-size: 12px;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, .35);
+}
+
+.cafe-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+.cafe-list li {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+.cafe-list b { display: block; color: var(--ink); }
+.cafe-list span { display: block; font-size: .85rem; color: var(--ink-3); margin-top: 2px; }
+.cafe-list a { font-size: .85rem; }
+
+/* ── Text blocks ───────────────────────────────────────────────────── */
+.cols {
+  display: grid;
+  gap: var(--gap);
+  grid-template-columns: 1fr;
+}
+@media (min-width: 700px) {
+  .cols { grid-template-columns: 1fr 1fr; }
+}
+.col {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 20px;
+}
+.col ul { margin: 0; padding-left: 1.15rem; color: var(--ink-2); }
+.col li { margin-bottom: 8px; }
+.col li:last-child { margin-bottom: 0; }
+
+code {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 1px 6px;
+  font-size: .9em;
+}
+.links { display: flex; flex-wrap: wrap; gap: 20px; margin-top: 18px; }
 
 footer {
-  border-top: 1px solid var(--line); padding: 26px 0 40px;
-  font-size: .85rem; color: var(--muted);
+  border-top: 1px solid var(--line);
+  padding-block: 28px 44px;
+  font-size: .85rem;
+  color: var(--ink-3);
 }
 footer p { margin: 0 0 6px; }
-.muted { color: var(--muted); }
-
-@media (prefers-color-scheme: dark) {
-  :root { --paper: #0f1613; --ink: #e6edea; --line: #24352f; --brand-tint: #13211d; --muted: #93a5a0; --brand-dark: #7fc9b6; }
-  .stat, .cafe-list li, code { background: #14201c; }
-  #map { background: #14201c; }
-}
+.muted { color: var(--ink-3); }

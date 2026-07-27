@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>What repair cafes achieve together</title>
-<meta name="description" content="Repairs, sessions and carbon saved by the community repair cafes running Circularity Repair Cafe Hub." />
-<link rel="stylesheet" href="/vendor/leaflet/leaflet.css" />
-<link rel="stylesheet" href="/styles.css" />
+<title>What repair cafés achieve together</title>
+<meta name="description" content="Repairs, sessions and carbon saved by the community repair cafés running Circularity Repair Cafe Hub." />
+<link rel="stylesheet" href="/vendor/leaflet/leaflet.css?v=__V__" />
+<link rel="stylesheet" href="/styles.css?v=__V__" />
 </head>
 <body>
 
@@ -15,77 +15,115 @@
     <p class="eyebrow">Circularity Repair Café Hub</p>
     <h1>What repair cafés achieve together</h1>
     <p class="lede">
-      Every cafe running this software can choose to send a short daily summary of what it has
+      Every café running this software can choose to send a short daily summary of what it has
       done. This is all of it, added up.
     </p>
   </div>
 </header>
 
 <main>
-  <section class="wrap band">
-    <dl class="stats" id="stats" aria-busy="true">
-      <div class="stat"><dd id="s-fixed">–</dd><dt>Things fixed</dt></div>
-      <div class="stat"><dd id="s-co2">–</dd><dt>CO₂ saved</dt></div>
-      <div class="stat"><dd id="s-sessions">–</dd><dt>Sessions held</dt></div>
-      <div class="stat"><dd id="s-volunteers">–</dd><dt>Volunteers</dt></div>
-      <div class="stat"><dd id="s-cafes">–</dd><dt>Cafés sharing</dt></div>
-      <div class="stat"><dd id="s-rate">–</dd><dt>Fixed on the day</dt></div>
-    </dl>
-    <p class="note" id="note"></p>
-  </section>
 
-  <section class="wrap">
-    <h2>Where they are</h2>
-    <p class="sub" id="map-sub">Cafés that chose to appear here. Click a pin for its numbers.</p>
-    <div id="map" role="img" aria-label="Map of participating repair cafés"></div>
-    <ul class="cafe-list" id="cafe-list"></ul>
-  </section>
-
-  <section class="wrap band">
-    <h2>What is actually collected</h2>
-    <div class="cols">
-      <div>
-        <h3>What we receive</h3>
-        <ul>
-          <li>How many repairs were recorded, and how many were fixed</li>
-          <li>How many sessions were held, and how many volunteers helped</li>
-          <li>The kinds of thing repaired, from a shared list of item types</li>
-          <li>Which version of the software is running</li>
-        </ul>
+  <!-- The figures. One hero number, then the supporting counts. -->
+  <section class="section band">
+    <div class="wrap">
+      <div class="figures">
+        <div class="hero-figure">
+          <p class="hero-value" id="s-fixed">–</p>
+          <p class="hero-label">Things fixed instead of thrown away</p>
+        </div>
+        <dl class="stats" id="stats" aria-busy="true">
+          <div class="stat">
+            <dt>CO<sub>2</sub> saved</dt>
+            <dd id="s-co2">–</dd>
+          </div>
+          <div class="stat">
+            <dt>Sessions held</dt>
+            <dd id="s-sessions">–</dd>
+          </div>
+          <div class="stat">
+            <dt>Volunteers</dt>
+            <dd id="s-volunteers">–</dd>
+          </div>
+          <div class="stat">
+            <dt>Items brought in</dt>
+            <dd id="s-recorded">–</dd>
+          </div>
+          <div class="stat">
+            <dt>Fixed on the day</dt>
+            <dd id="s-rate">–</dd>
+          </div>
+          <div class="stat">
+            <dt>Cafés sharing</dt>
+            <dd id="s-cafes">–</dd>
+          </div>
+        </dl>
       </div>
-      <div>
-        <h3>What we never receive</h3>
-        <ul>
-          <li>Names of people, volunteers or visitors</li>
-          <li>Anything a visitor told a cafe, or any contact details</li>
-          <li>Item descriptions, fault notes, or any other typed text</li>
-          <li>Photographs, and no address is ever stored</li>
-        </ul>
+      <p class="note" id="note">Loading the figures…</p>
+    </div>
+  </section>
+
+  <!-- The map, with the same cafés listed beside it. -->
+  <section class="section">
+    <div class="wrap">
+      <h2>Where they are</h2>
+      <p class="sub" id="map-sub">Loading the map…</p>
+      <div class="map-layout">
+        <div id="map" role="img" aria-label="Map of participating repair cafés"></div>
+        <ul class="cafe-list" id="cafe-list"></ul>
       </div>
     </div>
-    <p class="note">
-      There is no free-text field anywhere in the message, so nothing personal can travel with it
-      even by accident. A café's name and location only appear above if it explicitly asked to be
-      on the map, and the pin comes from its own public listing on
-      <a href="https://www.repaircafe.org">repaircafe.org</a> rather than from anything we were
-      told.
-    </p>
   </section>
 
-  <section class="wrap">
-    <h2>Running a hub?</h2>
-    <p>
-      Sharing is off until somebody turns it on. To change it, go to <strong>Settings</strong>, then
-      <strong>Sharing our numbers</strong>, where you can also see the exact message your hub would
-      send and ask us to delete everything we hold about you. To rule it out before the software
-      first starts, set <code>TELEMETRY_DISABLED=true</code>.
-    </p>
-    <p class="links">
-      <a href="https://github.com/Zesty0wl/circularity-repair-cafe-hub">The hub</a>
-      <a href="https://github.com/Zesty0wl/circularity-repair-cafe-collector">This collector</a>
-      <a href="/api/v1/public/summary">The figures as JSON</a>
-    </p>
+  <section class="section band">
+    <div class="wrap">
+      <h2>What is actually collected</h2>
+      <div class="cols">
+        <div class="col">
+          <h3>What we receive</h3>
+          <ul>
+            <li>How many repairs were recorded, and how many were fixed</li>
+            <li>How many sessions were held, and how many volunteers helped</li>
+            <li>The kinds of thing repaired, from a shared list of item types</li>
+            <li>Which version of the software is running</li>
+          </ul>
+        </div>
+        <div class="col">
+          <h3>What we never receive</h3>
+          <ul>
+            <li>Names of people, volunteers or visitors</li>
+            <li>Anything a visitor told a café, or any contact details</li>
+            <li>Item descriptions, fault notes, or any other typed text</li>
+            <li>Photographs, and no address is ever stored</li>
+          </ul>
+        </div>
+      </div>
+      <p class="note">
+        There is no free-text field anywhere in the message, so nothing personal can travel with it
+        even by accident. A café's name and location only appear above if it explicitly asked to be
+        on the map, and the pin comes from its own public listing on
+        <a href="https://www.repaircafe.org">repaircafe.org</a> rather than from anything we were
+        told.
+      </p>
+    </div>
   </section>
+
+  <section class="section">
+    <div class="wrap prose">
+      <h2>Running a hub?</h2>
+      <p>
+        Sharing is off until somebody turns it on. To change it, go to <strong>Settings</strong>,
+        then <strong>Sharing our numbers</strong>, where you can also see the exact message your hub
+        would send and ask us to delete everything we hold about you. To rule it out before the
+        software first starts, set <code>TELEMETRY_DISABLED=true</code>.
+      </p>
+      <p class="links">
+        <a href="https://github.com/Zesty0wl/circularity-repair-cafe-hub">The hub</a>
+        <a href="https://github.com/Zesty0wl/circularity-repair-cafe-collector">This collector</a>
+        <a href="/api/v1/public/summary">The figures as JSON</a>
+      </p>
+    </div>
+  </section>
+
 </main>
 
 <footer>
@@ -100,7 +138,7 @@
   </div>
 </footer>
 
-<script src="/vendor/leaflet/leaflet.js"></script>
-<script src="/app.js"></script>
+<script src="/vendor/leaflet/leaflet.js?v=__V__"></script>
+<script src="/app.js?v=__V__"></script>
 </body>
 </html>

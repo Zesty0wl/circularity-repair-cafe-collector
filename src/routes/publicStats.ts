@@ -72,7 +72,7 @@ export async function publicStatsRoutes(app: FastifyInstance): Promise<void> {
       co2SavedKg: Math.round(Number(t.co2_saved_kg ?? 0) * 10) / 10,
       // Said out loud, because it is the honest caveat: cafes that chose not
       // to share are invisible here, so every figure is a floor.
-      note: 'Counts only the cafes that chose to share their numbers, so these are a minimum.',
+      note: 'Counts only the cafés that chose to share their numbers, so these are a minimum.',
       activeWithinDays: ACTIVE_DAYS,
       generatedAt: new Date().toISOString(),
     };
