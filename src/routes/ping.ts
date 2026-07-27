@@ -18,13 +18,44 @@ import { env } from '../env.js';
  * clock must be roughly right, and the token must belong to the install id in
  * the body.
  */
+/**
+ * How many brand new installs one address may register, and over what window.
+ *
+ * Somebody setting up a cafe does this once. Anything doing it repeatedly is
+ * not setting up cafes, and the route's own limit of 30 an hour was written for
+ * returning pings, which let a single address invent thirty cafes an hour.
+ */
+const NEW_INSTALLS_PER_ADDRESS = 3;
+const NEW_INSTALL_WINDOW_MS = 60 * 60 * 1000;
+const newInstallLog = new Map<string, number[]>();
+
+function allowNewInstall(address: string): boolean {
+  const now = Date.now();
+  const seen = (newInstallLog.get(address) ?? []).filter((t) => now - t < NEW_INSTALL_WINDOW_MS);
+  if (seen.length >= NEW_INSTALLS_PER_ADDRESS) {
+    newInstallLog.set(address, seen);
+    return false;
+  }
+  seen.push(now);
+  newInstallLog.set(address, seen);
+  // Keep the map from growing without bound.
+  if (newInstallLog.size > 5000) {
+    for (const [key, times] of newInstallLog) {
+      if (times.every((t) => now - t >= NEW_INSTALL_WINDOW_MS)) newInstallLog.delete(key);
+    }
+  }
+  return true;
+}
+
 export async function pingRoutes(app: FastifyInstance): Promise<void> {
   app.post(
     '/api/v1/ping',
     {
       config: {
-        // One a day is expected. This leaves room for a restart loop and a
-        // retry without letting anyone use us as a firehose.
+        // A returning install pings once a day; this leaves room for a restart
+        // loop and a retry. Creating a *new* install is far rarer and is
+        // limited separately below, because one limit for both allowed thirty
+        // new cafes an hour from a single address.
         rateLimit: { max: 30, timeWindow: '1 hour' },
       },
     },
@@ -62,9 +93,17 @@ export async function pingRoutes(app: FastifyInstance): Promise<void> {
       if (!existing) {
         // First hello. Anyone can claim an id nobody has claimed yet, which is
         // fine: an id on its own says nothing, and whoever claims it is the
-        // only one who can ever write to it afterwards.
+        // only one who can ever write to it afterwards. What is not fine is
+        // doing it repeatedly, so first contact has its own tighter limit.
         if (presented) {
           reply.code(401).send({ error: 'Unknown install', code: 'ping/unknown_install' });
+          return;
+        }
+        if (!allowNewInstall(request.ip)) {
+          reply.code(429).send({
+            error: 'Too many new installs from here. Try again later.',
+            code: 'ping/too_many_new',
+          });
           return;
         }
         issuedToken = newToken();

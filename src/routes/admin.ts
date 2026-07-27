@@ -9,18 +9,29 @@ import { bearerFrom } from '../lib/tokens.js';
  * The view for us. One shared token in the environment, sent as a bearer
  * header. There are no accounts here because there is one reader.
  */
+/** Generous for one human reader, mean for anything guessing at the token. */
+const ADMIN_LIMIT = { max: 30, timeWindow: '1 minute' };
+
 export async function adminRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', async (request, reply) => {
     const presented = bearerFrom(request.headers.authorization) ?? '';
-    const a = Buffer.from(presented.padEnd(64, '\0').slice(0, 64));
-    const b = Buffer.from(env.ADMIN_TOKEN.padEnd(64, '\0').slice(0, 64));
-    if (presented.length === 0 || !crypto.timingSafeEqual(a, b)) {
+    if (presented.length === 0) {
+      reply.code(401).send({ error: 'Not for you', code: 'admin/unauthorised' });
+      return;
+    }
+    // Compare fixed-length hashes rather than the strings themselves. Padding
+    // the raw values meant a multi-byte token produced buffers of different
+    // byte lengths, timingSafeEqual threw, and the reply was a 500 rather than
+    // a 401. Two sha256 digests are always 32 bytes, whatever was sent.
+    const a = crypto.createHash('sha256').update(presented).digest();
+    const b = crypto.createHash('sha256').update(env.ADMIN_TOKEN).digest();
+    if (!crypto.timingSafeEqual(a, b)) {
       reply.code(401).send({ error: 'Not for you', code: 'admin/unauthorised' });
     }
   });
 
   /** Who is out there, newest contact first. */
-  app.get('/api/v1/admin/installs', async (request) => {
+  app.get('/api/v1/admin/installs', { config: { rateLimit: ADMIN_LIMIT } }, async (request) => {
     const q = request.query as { limit?: string };
     const limit = Math.max(1, Math.min(500, Number(q.limit) || 100));
     const rows = await db.execute(sql`
@@ -42,7 +53,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /** How the fleet is doing: versions, activity, growth. */
-  app.get('/api/v1/admin/overview', async () => {
+  app.get('/api/v1/admin/overview', { config: { rateLimit: ADMIN_LIMIT } }, async () => {
     const versions = await db.execute(sql`
       SELECT COALESCE(app_version, 'unknown') AS version, COUNT(*)::int AS installs
       FROM installs WHERE is_blocked = FALSE
@@ -72,7 +83,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /** Silence a noisy or broken install without a deploy. */
-  app.post('/api/v1/admin/installs/:id/block', async (request, reply) => {
+  app.post('/api/v1/admin/installs/:id/block', { config: { rateLimit: ADMIN_LIMIT } }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const body = (request.body ?? {}) as { blocked?: boolean };
     const blocked = body.blocked !== false;

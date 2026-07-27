@@ -2,6 +2,43 @@
 
 Notable changes to the Repair Cafe Hub telemetry collector. Newest first.
 
+## 1.3.0 — 27 July 2026
+
+Security. Everything here was found by probing the running service rather than
+reading the code, and every finding was reproduced before it was fixed.
+
+### Fixed
+
+- **A stranger could appear on the public map as any café in the repaircafe.org
+  directory.** The slug arrived in the payload and nothing proved it belonged to
+  the sender, but it was then resolved against the directory mirror to fetch
+  that café's real name and coordinates. So a fabricated install could be drawn
+  at a real café's address, under its real name, with numbers of its choosing.
+  The lookup is gone: a café now appears only if it sent its own coordinates,
+  under the name it sent. The map may be empty until verification ships, which
+  is the right trade. See `docs/proposal-verified-telemetry.md`.
+- **A malformed admin token returned 500 rather than 401.** The comparison
+  padded the raw strings to 64 characters, so a multi-byte token produced
+  buffers of different byte lengths and `timingSafeEqual` threw. It now compares
+  two sha256 digests, which are always the same length whatever was sent.
+- **The admin endpoints had no rate limit at all.** 60 wrong tokens got 60
+  answers. Now 30 a minute.
+- **One address could create 30 new installs an hour.** The route's limit was
+  written for returning pings and applied to first contact as well. Registering
+  a new install is now limited separately, to three an hour, because setting up
+  a café is something you do once.
+
+### Known, and not yet fixed
+
+- The public figures still count anything that was pushed. Twelve requests from
+  one laptop moved them from 12 repairs at 1 café to 24 at 13. Verification is
+  the fix and is specified in `docs/proposal-verified-telemetry.md`.
+- The origin answers on its own IP, so Cloudflare can be bypassed and
+  `X-Forwarded-For` is attacker-controlled, which makes per-address limits
+  best-effort rather than reliable. That is an nginx change on the host and
+  affects every site on it, not only this one.
+- Pings are still kept forever.
+
 ## 1.2.0 — 27 July 2026
 
 ### Changed
