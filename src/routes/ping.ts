@@ -167,6 +167,16 @@ export async function pingRoutes(app: FastifyInstance): Promise<void> {
       // the reply, and the outcome only affects what we publish tomorrow.
       void verifyIfDue(body.installId, cafe.url, request.log);
 
+      // Tell the hub how it is doing, so a cafe is never left wondering why
+      // its numbers are missing. The commonest cause is a publicUrl saved as
+      // http://127.0.0.1:5026, because setup was done down an SSH tunnel, and
+      // without this the cafe would never find out.
+      const [after] = await db
+        .select({ verifiedAt: installs.verifiedAt, verifyError: installs.verifyError })
+        .from(installs)
+        .where(eq(installs.id, body.installId))
+        .limit(1);
+
       // `token` appears exactly once, on the call that mints it.
       // `nextPingAfterHours` lets us slow every install down later without
       // shipping new client code, which is a lever worth having on day one.
@@ -174,6 +184,15 @@ export async function pingRoutes(app: FastifyInstance): Promise<void> {
         ok: true,
         ...(issuedToken ? { token: issuedToken } : {}),
         nextPingAfterHours: 24,
+        verification: {
+          verified: Boolean(after?.verifiedAt),
+          // Null on the very first ping, because the check is still running.
+          reason: after?.verifiedAt ? null : (after?.verifyError ?? null),
+          // Said plainly, because it is the actionable part.
+          help: after?.verifiedAt
+            ? null
+            : 'Your numbers are counted only once we can fetch /api/public/telemetry from your public web address. Check Settings, Cafe profile, Public URL.',
+        },
       };
     }
   );

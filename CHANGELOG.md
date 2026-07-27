@@ -2,6 +2,20 @@
 
 Notable changes to the Repair Cafe Hub telemetry collector. Newest first.
 
+## 2.0.1 — 27 July 2026
+
+### Fixed
+
+- **We could be used to make requests to somebody else's website.** After each
+  ping the collector fetches the address the sender named, and the cooldown that
+  should have limited that keyed on `verified_at` — which stays null for an
+  install that never verifies. So the one case that needed a brake had none, and
+  every ping sent us out again. Point a fake install at a victim's site and our
+  server becomes their traffic. The cooldown now keys on when we last *looked*,
+  and a global ceiling of 30 outbound checks a minute stops many senders adding
+  up to the same thing. Verification is the only thing here that touches other
+  people's servers, so it is the only thing that can be turned into a weapon.
+
 ## 2.0.0 — 27 July 2026
 
 **The published figures now mean something different.** They count only cafés

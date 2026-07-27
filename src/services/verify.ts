@@ -39,6 +39,25 @@ const MAX_BYTES = 64 * 1024;
 /** Re-check roughly daily, matching the ping rhythm. */
 export const RECHECK_AFTER_MS = 20 * 60 * 60 * 1000;
 
+/**
+ * A ceiling on outbound checks across all installs.
+ *
+ * The per-install cooldown stops one sender making us hammer a site. This
+ * stops many senders adding up to the same thing. Verification is the only
+ * thing here that makes requests to other people's servers, so it is the only
+ * thing that can be turned into a weapon.
+ */
+const MAX_CHECKS_PER_MINUTE = 30;
+let checkTimes: number[] = [];
+
+function withinOutboundBudget(): boolean {
+  const now = Date.now();
+  checkTimes = checkTimes.filter((t) => now - t < 60_000);
+  if (checkTimes.length >= MAX_CHECKS_PER_MINUTE) return false;
+  checkTimes.push(now);
+  return true;
+}
+
 const USER_AGENT =
   'CircularityRepairCafeTelemetry/1.0 verification (+https://github.com/Zesty0wl/circularity-repair-cafe-collector)';
 
@@ -218,7 +237,18 @@ export async function verifyIfDue(
   try {
     const [row] = await db.select().from(installs).where(eq(installs.id, installId)).limit(1);
     if (!row) return;
-    if (row.verifiedAt && Date.now() - row.verifiedAt.getTime() < RECHECK_AFTER_MS) return;
+    // The cooldown must key on when we last LOOKED, not on when we last
+    // succeeded. Keying on verifiedAt meant an install that never verifies has
+    // no cooldown at all, so every ping sent us out to fetch whatever URL it
+    // named: point a fake install at somebody else's website and we become
+    // their traffic. A failing check is exactly the case that needs the brake.
+    const lastLooked = row.verifyCheckedAt ?? row.verifiedAt;
+    if (lastLooked && Date.now() - lastLooked.getTime() < RECHECK_AFTER_MS) return;
+
+    if (!withinOutboundBudget()) {
+      log.warn({ installId }, 'skipping verification: too many outbound checks this minute');
+      return;
+    }
 
     const outcome = await verifyInstall(installId, publicUrl);
     await db
