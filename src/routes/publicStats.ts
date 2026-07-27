@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { sql } from 'drizzle-orm';
 import { db } from '../db/index.js';
+import { lookupSlug } from '../services/directory.js';
 
 /**
  * What the community has done, in public
@@ -103,20 +104,33 @@ export async function publicStatsRoutes(app: FastifyInstance): Promise<void> {
         AND (i.cafe_slug IS NOT NULL OR (i.cafe_lat IS NOT NULL AND i.cafe_lng IS NOT NULL))
       ORDER BY i.cafe_name
     `);
+    // A cafe listed on repaircafe.org sends us only its slug, so the pin comes
+    // from that public directory rather than from anything we were told. See
+    // services/directory.ts. Coordinates a cafe sent itself win, because a
+    // cafe not in the directory has no other way to appear.
+    const cafes = await Promise.all(
+      rows.rows.map(async (r: any) => {
+        const listed = await lookupSlug(r.cafe_slug);
+        const lat = r.cafe_lat === null ? (listed?.lat ?? null) : Number(r.cafe_lat);
+        const lng = r.cafe_lng === null ? (listed?.lng ?? null) : Number(r.cafe_lng);
+        return {
+          name: r.cafe_name || listed?.name || null,
+          repaircafeSlug: r.cafe_slug,
+          url: r.cafe_url,
+          lat,
+          lng,
+          country: r.country ?? listed?.country ?? null,
+          repairsFixed: Number(r.repairs_fixed ?? 0),
+          sessionsHeld: Number(r.sessions_held ?? 0),
+          co2SavedKg: Math.round(Number(r.co2_saved_kg ?? 0) * 10) / 10,
+        };
+      })
+    );
+
     return {
-      cafes: rows.rows.map((r: any) => ({
-        name: r.cafe_name,
-        // A pin can be looked up from the repaircafe.org directory by slug,
-        // which is why a cafe on that directory need send us no location.
-        repaircafeSlug: r.cafe_slug,
-        url: r.cafe_url,
-        lat: r.cafe_lat === null ? null : Number(r.cafe_lat),
-        lng: r.cafe_lng === null ? null : Number(r.cafe_lng),
-        country: r.country,
-        repairsFixed: Number(r.repairs_fixed ?? 0),
-        sessionsHeld: Number(r.sessions_held ?? 0),
-        co2SavedKg: Math.round(Number(r.co2_saved_kg ?? 0) * 10) / 10,
-      })),
+      // Only cafes we can actually place. One with no pin would otherwise be
+      // counted in the map's own total and drawn nowhere.
+      cafes: cafes.filter((c) => c.lat !== null && c.lng !== null),
       generatedAt: new Date().toISOString(),
     };
   });

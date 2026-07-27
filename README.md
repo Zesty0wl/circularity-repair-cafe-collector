@@ -10,7 +10,9 @@ installs that chose to share them, and publishes the totals.
 there. A change to the payload has to be made in both places, and the
 `schemaVersion` field exists so an older hub and a newer collector can tell.
 
-Running at <https://repaircafetelemetry.bzwrd.co.uk>.
+Running at <https://repaircafetelemetry.bzwrd.co.uk>, which also serves the
+public page: the figures, a map of the cafes that asked to be on it, and a
+plain account of what is and is not collected.
 
 ## What it holds, and what it refuses to
 
@@ -68,6 +70,7 @@ full picture.
 | GET | `/api/v1/admin/installs` | `ADMIN_TOKEN` | Who is out there, newest first. |
 | POST | `/api/v1/admin/installs/:id/block` | `ADMIN_TOKEN` | Silence a noisy install without a deploy. |
 | GET | `/health` | none | For the container healthcheck. |
+| GET | `/` | none | The public page. Static files from `public/`, Leaflet from `node_modules`. |
 
 `POST /api/v1/ping` answers `{ ok, token?, nextPingAfterHours }`. `token` appears
 only on the call that mints it. `nextPingAfterHours` lets us slow every install
@@ -131,6 +134,9 @@ src/
   routes/ping.ts        ingest and forget
   routes/publicStats.ts summary and map
   routes/admin.ts       the view for us
+services/directory.ts a mirror of the public repaircafe.org directory, so a
+                      cafe's slug becomes a pin without us storing a location
+public/               the public page: index.html, styles.css, app.js
 nginx/                  the vhost to install on the host
 ```
 

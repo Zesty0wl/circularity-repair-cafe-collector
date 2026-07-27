@@ -1,0 +1,103 @@
+/* Circularity teal, matching the hub's default brand colour. Deliberately
+   plain: this page is one screen of numbers and a map, and it should load on a
+   phone in a hall with two bars of signal. No fonts are fetched. */
+:root {
+  --brand: #1b6b5a;
+  --brand-dark: #11443a;
+  --brand-tint: #edf3f2;
+  --ink: #0f172a;
+  --muted: #64748b;
+  --line: #e2e8f0;
+  --paper: #fbfbf9;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 16px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+
+.wrap { max-width: 1000px; margin: 0 auto; padding: 0 20px; }
+
+/* ── Hero ─────────────────────────────────────────────────────────── */
+.hero {
+  background: var(--brand);
+  color: #fff;
+  padding: 56px 0 48px;
+}
+.hero h1 { margin: 8px 0 0; font-size: clamp(1.8rem, 5vw, 2.8rem); line-height: 1.15; }
+.eyebrow {
+  margin: 0; text-transform: uppercase; letter-spacing: .16em;
+  font-size: .72rem; font-weight: 700; color: rgba(255,255,255,.75);
+}
+.lede { margin: 14px 0 0; max-width: 46rem; color: rgba(255,255,255,.9); font-size: 1.05rem; }
+
+/* ── Sections ─────────────────────────────────────────────────────── */
+main section { padding: 44px 0; }
+.band { background: var(--brand-tint); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); max-width: none; padding-left: 0; padding-right: 0; }
+.band > * { max-width: 1000px; margin-left: auto; margin-right: auto; padding-left: 20px; padding-right: 20px; }
+h2 { font-size: 1.5rem; margin: 0 0 6px; color: var(--brand-dark); }
+h3 { font-size: 1rem; margin: 0 0 8px; color: var(--brand-dark); }
+.sub { margin: 0 0 18px; color: var(--muted); }
+
+/* ── Numbers ──────────────────────────────────────────────────────── */
+.stats {
+  display: grid; gap: 14px; margin: 0;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+.stat {
+  background: #fff; border: 1px solid var(--line); border-radius: 14px;
+  padding: 18px 14px; text-align: center;
+}
+.stat dd {
+  margin: 0; font-size: clamp(1.5rem, 4vw, 2.1rem); font-weight: 700;
+  color: var(--brand-dark); line-height: 1.1; font-variant-numeric: tabular-nums;
+}
+.stat dt { margin-top: 6px; font-size: .82rem; color: var(--muted); }
+.note { margin: 16px 0 0; font-size: .85rem; color: var(--muted); max-width: 46rem; }
+
+/* ── Map ──────────────────────────────────────────────────────────── */
+#map {
+  height: 440px; border-radius: 14px; border: 1px solid var(--line);
+  background: #eef2f5; z-index: 0;
+}
+.leaflet-container { font: inherit; }
+.pin {
+  display: flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border-radius: 50%;
+  background: var(--brand); color: #fff; font-weight: 700; font-size: 11px;
+  border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.35);
+}
+.cafe-list { list-style: none; padding: 0; margin: 18px 0 0; display: grid; gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.cafe-list li {
+  background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px;
+}
+.cafe-list b { display: block; color: var(--brand-dark); }
+.cafe-list span { font-size: .85rem; color: var(--muted); }
+.cafe-list a { color: var(--brand); }
+
+/* ── Text blocks ──────────────────────────────────────────────────── */
+.cols { display: grid; gap: 28px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+.cols ul { margin: 0; padding-left: 1.1rem; }
+.cols li { margin-bottom: 6px; }
+code { background: #fff; border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; font-size: .9em; }
+a { color: var(--brand); }
+.links { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 18px; }
+
+footer {
+  border-top: 1px solid var(--line); padding: 26px 0 40px;
+  font-size: .85rem; color: var(--muted);
+}
+footer p { margin: 0 0 6px; }
+.muted { color: var(--muted); }
+
+@media (prefers-color-scheme: dark) {
+  :root { --paper: #0f1613; --ink: #e6edea; --line: #24352f; --brand-tint: #13211d; --muted: #93a5a0; --brand-dark: #7fc9b6; }
+  .stat, .cafe-list li, code { background: #14201c; }
+  #map { background: #14201c; }
+}

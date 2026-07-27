@@ -1,5 +1,8 @@
 import Fastify from 'fastify';
 import rateLimit from '@fastify/rate-limit';
+import staticPlugin from '@fastify/static';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { env } from './env.js';
 import { pool } from './db/index.js';
 import { runMigrations } from './db/migrate.js';
@@ -36,25 +39,52 @@ async function start(): Promise<void> {
     return { ok: true, ts: new Date().toISOString() };
   });
 
-  // A plain description at the root, so anyone who finds this host by accident
-  // can see what it is and how to switch it off, without reading our code.
-  app.get('/', async (_request, reply) => {
-    void reply.type('text/plain');
-    return [
-      'Circularity Repair Cafe Hub telemetry',
-      '',
-      'This collects anonymous counts from Repair Cafe Hub installs that chose',
-      'to share them: how many repairs, how many sessions, which version.',
-      '',
-      'It never receives names of people, visitor details, photos, or any text',
-      'anybody typed into the app.',
-      '',
-      'Running a hub and want to stop sending? Settings, then Telemetry. Or set',
-      'TELEMETRY_DISABLED=true before it first starts.',
-      '',
-      'Source: https://github.com/Zesty0wl/circularity-repair-cafe-hub',
-      '',
-    ].join('\n');
+  // ── The public page ──────────────────────────────────────────────
+  // A plain, self-contained page: the figures, a map of the cafes that asked
+  // to be on it, and a straight account of what is and is not collected.
+  // Anyone who finds this host by accident should be able to understand what
+  // it does without reading our code.
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const publicDir = path.resolve(here, '..', 'public');
+  const leafletDir = path.resolve(here, '..', 'node_modules', 'leaflet', 'dist');
+
+  await app.register(staticPlugin, {
+    root: publicDir,
+    prefix: '/',
+    index: ['index.html'],
+    // The page changes rarely, its data does not come from here.
+    cacheControl: true,
+    maxAge: '1h',
+  });
+  await app.register(staticPlugin, {
+    root: leafletDir,
+    prefix: '/vendor/leaflet/',
+    decorateReply: false,
+    cacheControl: true,
+    // Immutable: the version is pinned in package.json.
+    maxAge: '30d',
+  });
+
+  // Modest headers for a page that takes no input and sets no cookies. The
+  // tile host is the only third party, and it only ever serves images.
+  app.addHook('onSend', async (request, reply, payload) => {
+    if (!request.raw.url?.startsWith('/api/')) {
+      void reply.header(
+        'Content-Security-Policy',
+        [
+          "default-src 'self'",
+          "img-src 'self' data: https://*.basemaps.cartocdn.com",
+          "style-src 'self'",
+          "script-src 'self'",
+          "connect-src 'self'",
+          "frame-ancestors 'none'",
+          "base-uri 'self'",
+        ].join('; '),
+      );
+      void reply.header('X-Content-Type-Options', 'nosniff');
+      void reply.header('Referrer-Policy', 'no-referrer');
+    }
+    return payload;
   });
 
   await app.register(pingRoutes);

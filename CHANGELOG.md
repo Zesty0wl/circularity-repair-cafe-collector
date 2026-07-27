@@ -2,6 +2,26 @@
 
 Notable changes to the Repair Cafe Hub telemetry collector. Newest first.
 
+## 1.1.0 — 27 July 2026
+
+### Added
+
+- A public page at `/` instead of a paragraph of plain text: the headline
+  figures, a map of the cafes that asked to be on it, and a straight account of
+  what is and is not collected. No fonts or scripts are fetched from anywhere
+  else, so it loads on a phone in a hall with two bars of signal.
+- Pins are looked up from a mirror of the public repaircafe.org directory. A
+  cafe on that directory sends us its slug and nothing else, so appearing on
+  the map costs it no location data at all. A cafe not listed there can send
+  rounded coordinates instead, and those win where present.
+- Content-Security-Policy, nosniff and no-referrer on the page. The tile host
+  is the only third party and it only ever serves images.
+
+### Fixed
+
+- The map endpoint returned cafes with `lat: null` and drew nothing. It was
+  always meant to resolve a slug through the directory, and never did.
+
 ## 1.0.0 — 27 July 2026
 
 First working version. Receives daily summaries from

@@ -44,6 +44,11 @@ services:
       # nginx and Cloudflare sit in front, so the client address arrives in a
       # header rather than on the socket.
       TRUST_PROXY: "true"
+      DIRECTORY_CACHE: /data/repair-cafe-directory.json
+    volumes:
+      # Holds the daily copy of the public repaircafe.org directory. Losing it
+      # costs one refetch, nothing more.
+      - telemetry-cache:/data
     depends_on:
       db:
         condition: service_healthy
@@ -51,3 +56,5 @@ services:
 volumes:
   telemetry-db:
     name: repair-cafe-telemetry-db
+  telemetry-cache:
+    name: repair-cafe-telemetry-cache

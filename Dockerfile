@@ -31,6 +31,13 @@ COPY package.json package-lock.json* ./
 RUN npm install --omit=dev --no-audit --no-fund && npm cache clean --force
 
 COPY --from=builder /app/dist ./dist
+# The public page. Leaflet is served straight out of node_modules, which the
+# production install above already contains.
+COPY public ./public
+
+# Somewhere to keep the cached copy of the repaircafe.org directory, which is
+# what turns a cafe's slug into a pin on the map.
+RUN mkdir -p /data && chown node:node /data
 
 # Never run the collector as root.
 USER node
