@@ -2,6 +2,43 @@
 
 Notable changes to the Repair Cafe Hub telemetry collector. Newest first.
 
+## 2.0.0 — 27 July 2026
+
+**The published figures now mean something different.** They count only cafés
+whose own site we fetched and checked, so they are smaller and defensible
+rather than larger and unverifiable. See `docs/proposal-verified-telemetry.md`.
+
+### Added
+
+- **Verification.** After a ping, the collector fetches
+  `https://<that café's site>/api/public/telemetry` and looks for the same
+  install id it was just sent. Only a hub genuinely running at that address can
+  answer, which is the ACME HTTP-01 idea. It does not make faking impossible: it
+  makes one fake café cost a domain, a certificate and a served endpoint, each
+  time, instead of one `curl`.
+- **The figures we publish are the ones we fetched**, not the ones we were
+  handed. Pushed numbers are kept in `pings` as history and never shown as fact.
+- `reportedInstalls` in the summary: cafés we heard from but could not check.
+  Counted and stated, never folded into the impact figures.
+- A café is placed on the map by its own coordinates, or by its repaircafe.org
+  listing **only when the website that listing names is the host we verified**.
+  Otherwise a café could prove it controls its own domain and then borrow
+  somebody else's address.
+
+### Security
+
+Fetching a URL a stranger supplied is server-side request forgery, and from
+this container the Docker host's other services are reachable. The guards, all
+tested: https only; a bare IP is refused; the name is resolved and every
+address checked against loopback, RFC1918 (including the Docker bridge),
+link-local, cloud metadata, CGNAT, multicast and IPv6 ULA; no redirects; a
+fixed path that never comes from the payload; 5s timeout; 64 KB ceiling; and
+the fetched body is never returned to the sender.
+
+Verified against the live service: a ping claiming 9,000,000 repairs and
+another café's slug is accepted, recorded, and reaches neither the figures nor
+the map.
+
 ## 1.3.0 — 27 July 2026
 
 Security. Everything here was found by probing the running service rather than

@@ -33,6 +33,8 @@ export interface DirectoryEntry {
   lat: number;
   lng: number;
   country: string | null;
+  /** The website the cafe listed there. Free text, so treated as a hint only. */
+  website: string | null;
 }
 
 interface Snapshot {
@@ -102,7 +104,13 @@ async function fetchUpstream(): Promise<Snapshot> {
     // free text, so we take the last comma-separated part and no more.
     const address = decodeEntities(row.address ?? '');
     const country = address.split(',').map((p) => p.trim()).filter(Boolean).pop() ?? null;
-    bySlug[slug] = { name, lat: point.lat, lng: point.lng, country };
+    bySlug[slug] = {
+      name,
+      lat: point.lat,
+      lng: point.lng,
+      country,
+      website: typeof row.external_link === 'string' ? row.external_link : null,
+    };
   }
   return { fetchedAt: new Date().toISOString(), bySlug };
 }

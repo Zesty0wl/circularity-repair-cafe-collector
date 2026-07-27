@@ -1,6 +1,6 @@
 {
   "name": "repair-cafe-telemetry",
-  "version": "1.3.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
   "description": "Collects anonymous usage counts from Circularity Repair Cafe Hub installs",

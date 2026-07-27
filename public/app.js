@@ -39,6 +39,14 @@
       text('s-rate', d.successRate + '%');
       var note = d.note;
       if (d.countries > 1) note += ' Across ' + d.countries + ' countries.';
+      // Say how many we heard from but could not check, rather than quietly
+      // dropping them. The gap is the honest part of the number.
+      if (d.reportedInstalls > 0) {
+        note += ' A further ' + d.reportedInstalls + ' ' +
+          (d.reportedInstalls === 1 ? 'café shares its numbers but we could not check its site, so it is'
+                                    : 'cafés share their numbers but we could not check their sites, so they are') +
+          ' not counted above.';
+      }
       text('note', note);
       document.getElementById('stats').setAttribute('aria-busy', 'false');
       if (d.generatedAt) {
@@ -72,9 +80,10 @@
         return;
       }
       sub.textContent =
-        cafes.length === 1
-          ? 'One café has asked to appear here. Click the pin for its numbers.'
-          : cafes.length + ' cafés have asked to appear here. Click a pin for its numbers.';
+        (cafes.length === 1
+          ? 'One café has asked to appear here'
+          : cafes.length + ' cafés have asked to appear here') +
+        ', and each one proved it runs the site it claims. Click a pin for its numbers.';
 
       var map = L.map('map', { scrollWheelZoom: false });
       L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
@@ -111,6 +120,12 @@
           nf.format(c.repairsFixed) + ' fixed · ' +
           nf.format(c.sessionsHeld) + ' sessions · ' +
           weight(c.co2SavedKg) + ' saved';
+        if (c.host) {
+          var host = document.createElement('span');
+          host.textContent = 'verified at ' + c.host;
+          facts.appendChild(document.createElement('br'));
+          facts.appendChild(document.createTextNode(host.textContent));
+        }
 
         // Built as nodes rather than markup, so a café name can never be read
         // as HTML. The name comes from a public directory, but that is no

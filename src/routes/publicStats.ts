@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { sql } from 'drizzle-orm';
 import { db } from '../db/index.js';
+import { lookupSlug } from '../services/directory.js';
 
 /**
  * What the community has done, in public
@@ -28,35 +29,44 @@ export async function publicStatsRoutes(app: FastifyInstance): Promise<void> {
     void reply.header('Cache-Control', 'public, max-age=300');
     if (cached && Date.now() - cached.at < CACHE_MS) return cached.body;
 
+    // Verified installs only. The figures published here are the ones we
+    // fetched from each cafe's own site, not the ones we were handed: those
+    // are kept in `pings` as history, but anybody can post a number and only a
+    // fetched one can be checked. See services/verify.ts.
     const totals = await db.execute(sql`
-      WITH latest AS (
-        SELECT DISTINCT ON (p.install_id) p.*
-        FROM pings p
-        JOIN installs i ON i.id = p.install_id
-        WHERE i.is_blocked = FALSE
-          AND i.last_seen_at > NOW() - (${ACTIVE_DAYS} || ' days')::interval
-        ORDER BY p.install_id, p.received_at DESC
-      )
       SELECT
-        COUNT(*)::int                                   AS installs,
-        COALESCE(SUM(sessions_held), 0)::int            AS sessions_held,
-        COALESCE(SUM(volunteers), 0)::int               AS volunteers,
-        COALESCE(SUM(repairs_recorded), 0)::int         AS repairs_recorded,
-        COALESCE(SUM(repairs_fixed), 0)::int            AS repairs_fixed,
-        COALESCE(SUM(repairs_not_fixed), 0)::int        AS repairs_not_fixed,
-        COALESCE(SUM(co2_saved_kg), 0)::float           AS co2_saved_kg
-      FROM latest
+        COUNT(*)::int                                        AS installs,
+        COALESCE(SUM(verified_sessions_held), 0)::int        AS sessions_held,
+        COALESCE(SUM(verified_volunteers), 0)::int           AS volunteers,
+        COALESCE(SUM(verified_repairs_recorded), 0)::int     AS repairs_recorded,
+        COALESCE(SUM(verified_repairs_fixed), 0)::int        AS repairs_fixed,
+        COALESCE(SUM(verified_repairs_not_fixed), 0)::int    AS repairs_not_fixed,
+        COALESCE(SUM(verified_co2_saved_kg), 0)::float       AS co2_saved_kg
+      FROM installs
+      WHERE is_blocked = FALSE
+        AND verified_at IS NOT NULL
+        AND last_seen_at > NOW() - (${ACTIVE_DAYS} || ' days')::interval
     `);
-    const t = (totals.rows[0] ?? {}) as Record<string, unknown>;
+
+    // Installs we have heard from but could not check: counted, never
+    // published as impact. Shown so the gap is visible rather than hidden.
+    const reported = await db.execute(sql`
+      SELECT COUNT(*)::int AS n FROM installs
+      WHERE is_blocked = FALSE
+        AND verified_at IS NULL
+        AND last_seen_at > NOW() - (${ACTIVE_DAYS} || ' days')::interval
+    `);
 
     const countries = await db.execute(sql`
       SELECT COUNT(DISTINCT country)::int AS n
       FROM installs
       WHERE is_blocked = FALSE
         AND country IS NOT NULL
+        AND verified_at IS NOT NULL
         AND last_seen_at > NOW() - (${ACTIVE_DAYS} || ' days')::interval
     `);
 
+    const t = (totals.rows[0] ?? {}) as Record<string, unknown>;
     const fixed = Number(t.repairs_fixed ?? 0);
     const closed = fixed + Number(t.repairs_not_fixed ?? 0);
 
@@ -71,7 +81,9 @@ export async function publicStatsRoutes(app: FastifyInstance): Promise<void> {
       co2SavedKg: Math.round(Number(t.co2_saved_kg ?? 0) * 10) / 10,
       // Said out loud, because it is the honest caveat: cafes that chose not
       // to share are invisible here, so every figure is a floor.
-      note: 'Counts only the cafés that chose to share their numbers, so these are a minimum.',
+      reportedInstalls: Number((reported.rows[0] as Record<string, unknown> | undefined)?.n ?? 0),
+      note:
+        'Counts only the cafés that chose to share their numbers and whose own site we could check, so these are a minimum.',
       activeWithinDays: ACTIVE_DAYS,
       generatedAt: new Date().toISOString(),
     };
@@ -86,52 +98,65 @@ export async function publicStatsRoutes(app: FastifyInstance): Promise<void> {
    */
   app.get('/api/v1/public/map', async (_request, reply) => {
     void reply.header('Cache-Control', 'public, max-age=300');
+    // Verified installs only, and the name is the one that site served us
+    // rather than one anybody could type. A slug is not proof of anything and
+    // is no longer resolved: see docs/proposal-verified-telemetry.md.
     const rows = await db.execute(sql`
-      WITH latest AS (
-        SELECT DISTINCT ON (p.install_id) p.*
-        FROM pings p
-        ORDER BY p.install_id, p.received_at DESC
-      )
       SELECT
-        i.cafe_name, i.cafe_slug, i.cafe_url, i.cafe_lat, i.cafe_lng, i.country,
-        l.repairs_fixed, l.sessions_held, l.co2_saved_kg
-      FROM installs i
-      JOIN latest l ON l.install_id = i.id
-      WHERE i.level = 'community'
-        AND i.is_blocked = FALSE
-        AND i.last_seen_at > NOW() - (${ACTIVE_DAYS} || ' days')::interval
-        AND (i.cafe_slug IS NOT NULL OR (i.cafe_lat IS NOT NULL AND i.cafe_lng IS NOT NULL))
-      ORDER BY i.cafe_name
+        cafe_name, cafe_url, cafe_slug, verified_host, country,
+        cafe_lat, cafe_lng,
+        verified_repairs_fixed, verified_sessions_held, verified_co2_saved_kg
+      FROM installs
+      WHERE level = 'community'
+        AND is_blocked = FALSE
+        AND verified_at IS NOT NULL
+        AND last_seen_at > NOW() - (${ACTIVE_DAYS} || ' days')::interval
+      ORDER BY cafe_name
     `);
-    // IMPERSONATION, and why the directory lookup is gone.
-    //
-    // The slug arrives in the payload and nothing proves it belongs to the
-    // sender. Resolving it against the repaircafe.org mirror meant a stranger
-    // could send somebody else's slug and be drawn on this map under that
-    // cafe's real name, at its real address, with numbers of their choosing.
-    //
-    // The fix is not a better lookup. It is that identity has to be proved
-    // before it is published: see docs/proposal-verified-telemetry.md. Until
-    // that lands, a cafe appears only if it sent its own coordinates, and its
-    // name is only ever the one it sent. The map may be empty. An empty map
-    // that cannot lie beats a populated one that can.
-    const cafes = rows.rows.map((r: any) => ({
-      name: r.cafe_name,
-      repaircafeSlug: r.cafe_slug,
-      url: r.cafe_url,
-      lat: r.cafe_lat === null ? null : Number(r.cafe_lat),
-      lng: r.cafe_lng === null ? null : Number(r.cafe_lng),
-      country: r.country,
-      repairsFixed: Number(r.repairs_fixed ?? 0),
-      sessionsHeld: Number(r.sessions_held ?? 0),
-      co2SavedKg: Math.round(Number(r.co2_saved_kg ?? 0) * 10) / 10,
-      // Nothing is verified yet. The field exists so the page can say so, and
-      // so it means something the moment verification ships.
-      verified: false,
-    }));
 
+    // Where the pin comes from.
+    //
+    // Own coordinates win. Otherwise the repaircafe.org listing may supply
+    // them, but ONLY when the website that listing names is the same host we
+    // just verified. Without that check a cafe could prove it controls its own
+    // domain and then claim somebody else's slug to borrow their address. The
+    // directory is a convenience here, never a credential: `external_link` is
+    // free text a cafe typed in years ago.
+    const cafes = await Promise.all(
+      rows.rows.map(async (r: any) => {
+        let lat = r.cafe_lat === null ? null : Number(r.cafe_lat);
+        let lng = r.cafe_lng === null ? null : Number(r.cafe_lng);
+        let placedBy: 'itself' | 'its repaircafe.org listing' | null = lat === null ? null : 'itself';
+        if (lat === null && r.cafe_slug && r.verified_host) {
+          const listed = await lookupSlug(r.cafe_slug);
+          let listedHost: string | null = null;
+          try {
+            listedHost = listed?.website ? new URL(listed.website).hostname.toLowerCase() : null;
+          } catch {
+            listedHost = null;
+          }
+          if (listedHost && listedHost === String(r.verified_host).toLowerCase()) {
+            lat = listed!.lat;
+            lng = listed!.lng;
+            placedBy = 'its repaircafe.org listing';
+          }
+        }
+        return {
+        name: r.cafe_name,
+        url: r.cafe_url,
+        host: r.verified_host,
+        lat,
+        lng,
+        placedBy,
+        country: r.country,
+        repairsFixed: Number(r.verified_repairs_fixed ?? 0),
+        sessionsHeld: Number(r.verified_sessions_held ?? 0),
+        co2SavedKg: Math.round(Number(r.verified_co2_saved_kg ?? 0) * 10) / 10,
+        verified: true,
+        };
+      })
+    );
     return {
-      // Only cafes we can actually place.
       cafes: cafes.filter((c) => c.lat !== null && c.lng !== null),
       generatedAt: new Date().toISOString(),
     };

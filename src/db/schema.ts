@@ -42,9 +42,27 @@ export const installs = pgTable(
     cafeLng: numeric('cafe_lng', { precision: 6, scale: 2 }),
     /** Lets us drop a noisy or broken install without a deploy. */
     isBlocked: boolean('is_blocked').notNull().default(false),
+
+    // ── Proof ────────────────────────────────────────────────────────
+    // Set when we fetched this install's own site and found our install id
+    // looking back. Null means we have only its word for any of this. Public
+    // figures count verified installs alone. See services/verify.ts.
+    verifiedAt: timestamp('verified_at', { withTimezone: true }),
+    verifiedHost: text('verified_host'),
+    verifyCheckedAt: timestamp('verify_checked_at', { withTimezone: true }),
+    verifyError: text('verify_error'),
+    // What that site said about itself, which is what we publish. The pushed
+    // numbers are kept in `pings` for history but never shown as fact.
+    verifiedRepairsRecorded: integer('verified_repairs_recorded'),
+    verifiedRepairsFixed: integer('verified_repairs_fixed'),
+    verifiedRepairsNotFixed: integer('verified_repairs_not_fixed'),
+    verifiedSessionsHeld: integer('verified_sessions_held'),
+    verifiedVolunteers: integer('verified_volunteers'),
+    verifiedCo2SavedKg: numeric('verified_co2_saved_kg', { precision: 12, scale: 3 }),
   },
   (t) => ({
     lastSeenIdx: index('idx_installs_last_seen_at').on(t.lastSeenAt),
+    verifiedIdx: index('idx_installs_verified_at').on(t.verifiedAt),
     levelIdx: index('idx_installs_level').on(t.level),
   })
 );

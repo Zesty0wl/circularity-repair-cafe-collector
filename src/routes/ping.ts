@@ -5,6 +5,7 @@ import { installs, pings } from '../db/schema.js';
 import { cafeDetailsFor, pingSchema } from '../lib/payload.js';
 import { bearerFrom, countryFrom, hashToken, newToken, tokensMatch } from '../lib/tokens.js';
 import { env } from '../env.js';
+import { verifyIfDue } from '../services/verify.js';
 
 /**
  * Taking a ping
@@ -160,6 +161,11 @@ export async function pingRoutes(app: FastifyInstance): Promise<void> {
         repairsNotFixed: body.repairsNotFixed ?? null,
         co2SavedKg: body.co2?.savedKg === undefined ? null : String(body.co2.savedKg),
       });
+
+      // Check that this install is what it says it is, without making the
+      // sender wait for it. A cafe that is slow or offline must not hold up
+      // the reply, and the outcome only affects what we publish tomorrow.
+      void verifyIfDue(body.installId, cafe.url, request.log);
 
       // `token` appears exactly once, on the call that mints it.
       // `nextPingAfterHours` lets us slow every install down later without

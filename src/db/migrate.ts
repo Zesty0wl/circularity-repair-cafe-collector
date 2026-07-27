@@ -44,6 +44,22 @@ const STATEMENTS: string[] = [
   // The public summary asks for "the newest ping for each install" on every
   // cache miss. This is the index that makes that a cheap question.
   'CREATE INDEX IF NOT EXISTS idx_pings_install_received ON pings(install_id, received_at DESC)',
+
+  // ── Proof that an install is real (additive, idempotent) ───────────
+  // Public figures count only installs whose own site served our install id
+  // back to us. Everything else is "reported", counted but not published as
+  // fact. See services/verify.ts and docs/proposal-verified-telemetry.md.
+  `ALTER TABLE installs ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ`,
+  `ALTER TABLE installs ADD COLUMN IF NOT EXISTS verified_host TEXT`,
+  `ALTER TABLE installs ADD COLUMN IF NOT EXISTS verify_checked_at TIMESTAMPTZ`,
+  `ALTER TABLE installs ADD COLUMN IF NOT EXISTS verify_error TEXT`,
+  `ALTER TABLE installs ADD COLUMN IF NOT EXISTS verified_repairs_recorded INT`,
+  `ALTER TABLE installs ADD COLUMN IF NOT EXISTS verified_repairs_fixed INT`,
+  `ALTER TABLE installs ADD COLUMN IF NOT EXISTS verified_repairs_not_fixed INT`,
+  `ALTER TABLE installs ADD COLUMN IF NOT EXISTS verified_sessions_held INT`,
+  `ALTER TABLE installs ADD COLUMN IF NOT EXISTS verified_volunteers INT`,
+  `ALTER TABLE installs ADD COLUMN IF NOT EXISTS verified_co2_saved_kg NUMERIC(12,3)`,
+  'CREATE INDEX IF NOT EXISTS idx_installs_verified_at ON installs(verified_at)',
 ];
 
 export async function runMigrations(): Promise<void> {
