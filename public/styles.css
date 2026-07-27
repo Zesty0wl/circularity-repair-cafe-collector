@@ -225,6 +225,11 @@ a:hover { color: var(--brand-deep); }
 @media (min-width: 700px) {
   .cols { grid-template-columns: 1fr 1fr; }
 }
+/* Three cards need a row of three. At two columns the third card sits alone
+   on a second row, which reads as an afterthought rather than a third point. */
+@media (min-width: 940px) {
+  .cols { grid-template-columns: repeat(3, 1fr); }
+}
 .col {
   background: var(--surface);
   border: 1px solid var(--line);

@@ -2,6 +2,16 @@
 
 Notable changes to the Repair Cafe Hub telemetry collector. Newest first.
 
+## 2.0.3 — 27 July 2026
+
+### Changed
+
+- "And we check it" is now its own card, next to "What we receive" and "What we
+  never receive". It used to sit at the bottom of the first card, where it ran
+  straight into the list above it and read as part of that list.
+- The "What is actually collected" section shows three cards side by side on a
+  wide screen. On a narrow screen they still stack, one under the other.
+
 ## 2.0.2 — 27 July 2026
 
 ### Changed
