@@ -70,7 +70,7 @@ full picture.
 | GET | `/api/v1/admin/installs` | `ADMIN_TOKEN` | Who is out there, newest first. |
 | POST | `/api/v1/admin/installs/:id/block` | `ADMIN_TOKEN` | Silence a noisy install without a deploy. |
 | GET | `/health` | none | For the container healthcheck. |
-| GET | `/` | none | The public page. Static files from `public/`, Leaflet from `node_modules`. |
+| GET | `/` | none | The public page. Static files from `public/`, MapLibre from `node_modules`, map tiles from OpenFreeMap. |
 
 `POST /api/v1/ping` answers `{ ok, token?, nextPingAfterHours }`. `token` appears
 only on the call that mints it. `nextPingAfterHours` lets us slow every install

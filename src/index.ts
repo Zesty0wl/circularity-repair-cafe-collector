@@ -57,7 +57,11 @@ async function start(): Promise<void> {
   // it does without reading our code.
   const here = path.dirname(fileURLToPath(import.meta.url));
   const publicDir = path.resolve(here, '..', 'public');
-  const leafletDir = path.resolve(here, '..', 'node_modules', 'leaflet', 'dist');
+  const maplibreRoot = path.resolve(here, '..', 'node_modules', 'maplibre-gl');
+  const maplibreDir = path.join(maplibreRoot, 'dist');
+  const maplibreVersion: string = JSON.parse(
+    fs.readFileSync(path.join(maplibreRoot, 'package.json'), 'utf8'),
+  ).version;
 
   // The page is served by hand rather than as a static index, so the asset
   // links can carry the app version. Without that, Cloudflare happily serves a
@@ -71,6 +75,9 @@ async function start(): Promise<void> {
   const assetHash = createHash('sha256')
     .update(fs.readFileSync(path.join(publicDir, 'styles.css')))
     .update(fs.readFileSync(path.join(publicDir, 'app.js')))
+    // MapLibre's files are cached for a month, so a new release has to change
+    // their URLs too. Its worker is versioned by MapLibre itself.
+    .update(maplibreVersion)
     .digest('hex')
     .slice(0, 12);
   const pageHtml = fs
@@ -96,8 +103,11 @@ async function start(): Promise<void> {
     maxAge: '7d',
   });
   await app.register(staticPlugin, {
-    root: leafletDir,
-    prefix: '/vendor/leaflet/',
+    root: maplibreDir,
+    prefix: '/vendor/maplibre/',
+    // Only what the page loads. The dev builds and source maps stay put.
+    allowedPath: (p) =>
+      ['/maplibre-gl.mjs', '/maplibre-gl-worker.mjs', '/maplibre-gl.css'].includes(p),
     decorateReply: false,
     cacheControl: true,
     // Immutable: the version is pinned in package.json.
@@ -105,17 +115,19 @@ async function start(): Promise<void> {
   });
 
   // Modest headers for a page that takes no input and sets no cookies. The
-  // tile host is the only third party, and it only ever serves images.
+  // tile host is the only third party. MapLibre fetches the style, tiles,
+  // fonts and icons from it, and runs its worker from our own origin, so
+  // script-src 'self' covers the worker and nothing needs blob:.
   app.addHook('onSend', async (request, reply, payload) => {
     if (!request.raw.url?.startsWith('/api/')) {
       void reply.header(
         'Content-Security-Policy',
         [
           "default-src 'self'",
-          "img-src 'self' data: https://*.basemaps.cartocdn.com",
+          "img-src 'self' data:",
           "style-src 'self'",
           "script-src 'self'",
-          "connect-src 'self'",
+          "connect-src 'self' https://tiles.openfreemap.org",
           "frame-ancestors 'none'",
           "base-uri 'self'",
         ].join('; '),

@@ -1,6 +1,6 @@
 {
   "name": "repair-cafe-telemetry",
-  "version": "2.0.3",
+  "version": "2.0.4",
   "private": true,
   "type": "module",
   "description": "Collects anonymous usage counts from Circularity Repair Cafe Hub installs",
@@ -17,7 +17,7 @@
     "dotenv": "^16.4.5",
     "drizzle-orm": "^0.36.1",
     "fastify": "^4.28.1",
-    "leaflet": "^1.9.4",
+    "maplibre-gl": "^6.13.0",
     "pg": "^8.13.1",
     "zod": "^3.23.8"
   },

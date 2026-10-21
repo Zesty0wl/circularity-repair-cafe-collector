@@ -179,9 +179,11 @@ a:hover { color: var(--brand-deep); }
   background: var(--brand-tint);
   z-index: 0;
 }
-.leaflet-container { font: inherit; background: var(--brand-tint); }
-.leaflet-popup-content { margin: 12px 14px; }
-.leaflet-popup-content b { display: block; margin-bottom: 2px; }
+.maplibregl-map { font: inherit; background: var(--brand-tint); }
+.maplibregl-popup-content { padding: 12px 28px 12px 14px; border-radius: 8px; }
+.maplibregl-popup-content b { display: block; margin-bottom: 2px; }
+.maplibregl-popup-close-button { font-size: 18px; width: 24px; height: 24px; }
+.pin { cursor: pointer; }
 
 .pin {
   display: flex;

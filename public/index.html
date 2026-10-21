@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>What repair cafés achieve together</title>
 <meta name="description" content="Repairs, sessions and carbon saved by the community repair cafés running Circularity Repair Cafe Hub." />
-<link rel="stylesheet" href="/vendor/leaflet/leaflet.css?v=__V__" />
+<link rel="stylesheet" href="/vendor/maplibre/maplibre-gl.css?v=__V__" />
 <link rel="stylesheet" href="/styles.css?v=__V__" />
 </head>
 <body>
@@ -68,7 +68,8 @@
       <h2>Where they are</h2>
       <p class="sub" id="map-sub">Loading the map…</p>
       <div class="map-layout">
-        <div id="map" role="img" aria-label="Map of participating repair cafés"></div>
+        <div id="map" role="img" aria-label="Map of participating repair cafés"
+             data-lib="/vendor/maplibre/maplibre-gl.mjs?v=__V__"></div>
         <ul class="cafe-list" id="cafe-list"></ul>
       </div>
     </div>
@@ -139,14 +140,13 @@
     <p>
       Free and open source, MIT licensed. Part of
       <a href="https://circularity.org">Circularity</a>.
-      Map tiles by <a href="https://carto.com/attributions">CARTO</a>, data by
+      Map tiles by <a href="https://openfreemap.org">OpenFreeMap</a>, data by
       <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors.
     </p>
     <p class="muted" id="updated"></p>
   </div>
 </footer>
 
-<script src="/vendor/leaflet/leaflet.js?v=__V__"></script>
 <script src="/app.js?v=__V__"></script>
 </body>
 </html>

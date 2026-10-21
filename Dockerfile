@@ -31,7 +31,7 @@ COPY package.json package-lock.json* ./
 RUN npm install --omit=dev --no-audit --no-fund && npm cache clean --force
 
 COPY --from=builder /app/dist ./dist
-# The public page. Leaflet is served straight out of node_modules, which the
+# The public page. MapLibre is served straight out of node_modules, which the
 # production install above already contains.
 COPY public ./public
 

@@ -2,6 +2,31 @@
 
 Notable changes to the Repair Cafe Hub telemetry collector. Newest first.
 
+## 2.0.4 — 21 October 2026
+
+### Fixed
+
+- **The map showed "API KEY REQUIRED" instead of a map.** CARTO stopped serving
+  its basemap tiles without a key on 25 September 2026. The map now uses
+  [OpenFreeMap](https://openfreemap.org), which draws the same light Positron
+  style from OpenStreetMap data and asks for no key, no account and no cookies.
+  The footer credits it in place of CARTO.
+
+### Changed
+
+- The map is drawn by MapLibre instead of Leaflet, because OpenFreeMap serves
+  vector tiles and Leaflet only draws pictures. MapLibre is served from our own
+  host as before, and it is only fetched when there is a café to show.
+- The Content-Security-Policy lets the page fetch from `tiles.openfreemap.org`
+  and no longer allows images from CARTO. MapLibre's worker runs from our own
+  host, so the policy did not have to allow `blob:`.
+- The list of cafés beside the map no longer depends on the map. MapLibre needs
+  WebGL, and a browser without it now says the map could not be drawn and still
+  lists every café.
+- A popup near the edge of the map pans the map so it fits, as Leaflet's did.
+  The map credits fold away to their ⓘ while one is open; on a phone they
+  covered most of it. The footer still names both.
+
 ## 2.0.3 — 27 July 2026
 
 ### Changed
