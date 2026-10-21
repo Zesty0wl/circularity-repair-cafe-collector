@@ -1,15 +1,13 @@
-import {
-  pgTable,
-  uuid,
-  text,
-  boolean,
-  timestamp,
-  integer,
-  numeric,
-  jsonb,
-  bigserial,
-  index,
-} from 'drizzle-orm/pg-core';
+import { sqliteTable, text, integer, real, index } from 'drizzle-orm/sqlite-core';
+
+/**
+ * The tables, as drizzle sees them. The DDL that creates them is
+ * migrations/0001_init.sql, and the two must agree.
+ *
+ * Times are milliseconds since 1970 in an INTEGER, which is what drizzle's
+ * `timestamp_ms` reads and writes as a Date. Raw SQL compares them against
+ * `Date.now()`-style numbers.
+ */
 
 /**
  * One Repair Cafe Hub somewhere in the world.
@@ -18,38 +16,38 @@ import {
  * The cafe columns are only filled in when an install chose the "Community"
  * level, which asks to be shown on the public map.
  */
-export const installs = pgTable(
+export const installs = sqliteTable(
   'installs',
   {
-    id: uuid('id').primaryKey(),
+    id: text('id').primaryKey(),
     /** sha256 of the token we issued. The token itself is never stored. */
     tokenHash: text('token_hash').notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
+    lastSeenAt: integer('last_seen_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
     appVersion: text('app_version'),
     /** 'standard' or 'community'. What the install agreed to send. */
     level: text('level').notNull().default('standard'),
     /**
-     * Two letters from Cloudflare's CF-IPCountry header. We never keep the
-     * address itself, only which country it was in.
+     * Two letters from Cloudflare's idea of where the request came from. We
+     * never keep the address itself, only which country it was in.
      */
     country: text('country'),
     // ── Only set at the Community level ──────────────────────────────
     cafeSlug: text('cafe_slug'),
     cafeName: text('cafe_name'),
     cafeUrl: text('cafe_url'),
-    cafeLat: numeric('cafe_lat', { precision: 6, scale: 2 }),
-    cafeLng: numeric('cafe_lng', { precision: 6, scale: 2 }),
+    cafeLat: real('cafe_lat'),
+    cafeLng: real('cafe_lng'),
     /** Lets us drop a noisy or broken install without a deploy. */
-    isBlocked: boolean('is_blocked').notNull().default(false),
+    isBlocked: integer('is_blocked', { mode: 'boolean' }).notNull().default(false),
 
     // ── Proof ────────────────────────────────────────────────────────
     // Set when we fetched this install's own site and found our install id
     // looking back. Null means we have only its word for any of this. Public
     // figures count verified installs alone. See services/verify.ts.
-    verifiedAt: timestamp('verified_at', { withTimezone: true }),
+    verifiedAt: integer('verified_at', { mode: 'timestamp_ms' }),
     verifiedHost: text('verified_host'),
-    verifyCheckedAt: timestamp('verify_checked_at', { withTimezone: true }),
+    verifyCheckedAt: integer('verify_checked_at', { mode: 'timestamp_ms' }),
     verifyError: text('verify_error'),
     // What that site said about itself, which is what we publish. The pushed
     // numbers are kept in `pings` for history but never shown as fact.
@@ -58,13 +56,13 @@ export const installs = pgTable(
     verifiedRepairsNotFixed: integer('verified_repairs_not_fixed'),
     verifiedSessionsHeld: integer('verified_sessions_held'),
     verifiedVolunteers: integer('verified_volunteers'),
-    verifiedCo2SavedKg: numeric('verified_co2_saved_kg', { precision: 12, scale: 3 }),
+    verifiedCo2SavedKg: real('verified_co2_saved_kg'),
   },
-  (t) => ({
-    lastSeenIdx: index('idx_installs_last_seen_at').on(t.lastSeenAt),
-    verifiedIdx: index('idx_installs_verified_at').on(t.verifiedAt),
-    levelIdx: index('idx_installs_level').on(t.level),
-  })
+  (t) => [
+    index('idx_installs_last_seen_at').on(t.lastSeenAt),
+    index('idx_installs_verified_at').on(t.verifiedAt),
+    index('idx_installs_level').on(t.level),
+  ]
 );
 
 /**
@@ -74,32 +72,47 @@ export const installs = pgTable(
  * a figure for the day. So a worldwide total is a sum over the newest row per
  * install, never over the whole table. See routes/publicStats.ts.
  */
-export const pings = pgTable(
+export const pings = sqliteTable(
   'pings',
   {
-    id: bigserial('id', { mode: 'number' }).primaryKey(),
-    installId: uuid('install_id')
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    installId: text('install_id')
       .notNull()
       .references(() => installs.id, { onDelete: 'cascade' }),
-    receivedAt: timestamp('received_at', { withTimezone: true }).notNull().defaultNow(),
+    receivedAt: integer('received_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
     /** The client's own clock, kept so we can spot a badly set one. */
-    sentAt: timestamp('sent_at', { withTimezone: true }),
+    sentAt: integer('sent_at', { mode: 'timestamp_ms' }),
     appVersion: text('app_version'),
     /** The whole body as it arrived, so we can answer questions we have not thought of. */
-    payload: jsonb('payload').notNull(),
+    payload: text('payload', { mode: 'json' }).notNull(),
     // ── Pulled out of the payload so we can query without unpacking JSON ──
     sessionsHeld: integer('sessions_held'),
     volunteers: integer('volunteers'),
     repairsRecorded: integer('repairs_recorded'),
     repairsFixed: integer('repairs_fixed'),
     repairsNotFixed: integer('repairs_not_fixed'),
-    co2SavedKg: numeric('co2_saved_kg', { precision: 12, scale: 3 }),
+    co2SavedKg: real('co2_saved_kg'),
   },
-  (t) => ({
-    installIdx: index('idx_pings_install_id').on(t.installId),
-    receivedIdx: index('idx_pings_received_at').on(t.receivedAt),
-  })
+  (t) => [
+    index('idx_pings_install_id').on(t.installId),
+    index('idx_pings_received_at').on(t.receivedAt),
+    index('idx_pings_install_received').on(t.installId, t.receivedAt),
+  ]
 );
+
+/**
+ * A copy of the public repaircafe.org directory: slug to place. Refreshed
+ * daily by the cron in src/worker.ts. See services/directory.ts.
+ */
+export const directory = sqliteTable('directory', {
+  slug: text('slug').primaryKey(),
+  name: text('name').notNull(),
+  lat: real('lat').notNull(),
+  lng: real('lng').notNull(),
+  country: text('country'),
+  /** The website the cafe listed there. Free text, so treated as a hint only. */
+  website: text('website'),
+});
 
 export type Install = typeof installs.$inferSelect;
 export type Ping = typeof pings.$inferSelect;

@@ -1,5 +1,6 @@
-import fs from 'node:fs';
-import path from 'node:path';
+import { eq, sql } from 'drizzle-orm';
+import type { DB } from '../db/index.js';
+import { directory } from '../db/schema.js';
 
 /**
  * Where the pins come from
@@ -17,16 +18,14 @@ import path from 'node:path';
  *
  * The hub mirrors the same directory for its own world map. This is a smaller
  * copy of that idea: we only need slug to position, so we keep a lookup table
- * rather than the whole directory.
+ * rather than the whole directory. It lives in the `directory` table and is
+ * replaced once a day by the cron in src/worker.ts.
  */
 
 const SOURCE_URL = 'https://www.repaircafe.org/wp-json/v1/map';
-const TTL_MS = 24 * 60 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 20_000;
 const USER_AGENT =
   'CircularityRepairCafeTelemetry/1.0 (+https://github.com/Zesty0wl/circularity-repair-cafe-collector)';
-
-const CACHE_FILE = process.env.DIRECTORY_CACHE ?? '/data/repair-cafe-directory.json';
 
 export interface DirectoryEntry {
   name: string;
@@ -36,14 +35,6 @@ export interface DirectoryEntry {
   /** The website the cafe listed there. Free text, so treated as a hint only. */
   website: string | null;
 }
-
-interface Snapshot {
-  fetchedAt: string;
-  bySlug: Record<string, DirectoryEntry>;
-}
-
-let memory: Snapshot | null = null;
-let inFlight: Promise<Snapshot | null> | null = null;
 
 function slugFromLink(link: string | null | undefined): string | null {
   if (!link) return null;
@@ -85,7 +76,7 @@ function decodeEntities(value: string): string {
     .trim();
 }
 
-async function fetchUpstream(): Promise<Snapshot> {
+async function fetchUpstream(): Promise<Record<string, DirectoryEntry>> {
   const res = await fetch(SOURCE_URL, {
     headers: { Accept: 'application/json', 'User-Agent': USER_AGENT },
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
@@ -112,68 +103,45 @@ async function fetchUpstream(): Promise<Snapshot> {
       website: typeof row.external_link === 'string' ? row.external_link : null,
     };
   }
-  return { fetchedAt: new Date().toISOString(), bySlug };
+  return bySlug;
 }
 
-function readDisk(): Snapshot | null {
-  try {
-    const parsed = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8')) as Snapshot;
-    if (!parsed?.bySlug || typeof parsed.fetchedAt !== 'string') return null;
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-function writeDisk(snapshot: Snapshot): void {
-  try {
-    fs.mkdirSync(path.dirname(CACHE_FILE), { recursive: true });
-    const tmp = `${CACHE_FILE}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(snapshot));
-    fs.renameSync(tmp, CACHE_FILE);
-  } catch {
-    // A cache we cannot write is not worth failing a page render over.
-  }
-}
-
-function isFresh(s: Snapshot | null): s is Snapshot {
-  if (!s) return false;
-  const age = Date.now() - new Date(s.fetchedAt).getTime();
-  return Number.isFinite(age) && age >= 0 && age < TTL_MS;
-}
-
-function refresh(): Promise<Snapshot | null> {
-  if (inFlight) return inFlight;
-  inFlight = fetchUpstream()
-    .then((s) => {
-      memory = s;
-      writeDisk(s);
-      return s;
-    })
-    .catch(() => null)
-    .finally(() => {
-      inFlight = null;
-    });
-  return inFlight;
-}
+/** D1 takes at most 100 bound values per statement: 16 rows of 6 columns. */
+const ROWS_PER_INSERT = 16;
 
 /**
- * The directory, served immediately even when stale and refreshed behind the
- * scenes, so a visitor never waits on repaircafe.org.
+ * Fetch the directory and replace our copy of it in one transaction, so a
+ * reader sees the old copy or the new one and never half of each. If
+ * repaircafe.org is down or answers nonsense, the old copy stays.
  */
-export async function getDirectory(): Promise<Snapshot | null> {
-  if (!memory) memory = readDisk();
-  if (isFresh(memory)) return memory;
-  if (memory) {
-    void refresh();
-    return memory;
+export async function refreshDirectory(db: DB): Promise<number> {
+  const bySlug = await fetchUpstream();
+  const rows = Object.entries(bySlug).map(([slug, e]) => ({ slug, ...e }));
+  // An empty answer is far more likely to be a fault upstream than every cafe
+  // in the world closing at once.
+  if (rows.length === 0) throw new Error('repaircafe.org returned no cafes');
+  const statements = [];
+  for (let i = 0; i < rows.length; i += ROWS_PER_INSERT) {
+    statements.push(db.insert(directory).values(rows.slice(i, i + ROWS_PER_INSERT)));
   }
-  return refresh();
+  await db.batch([db.delete(directory), ...statements]);
+  return rows.length;
+}
+
+/** Whether we have a copy at all, which is only false before the first refresh. */
+export async function haveDirectory(db: DB): Promise<boolean> {
+  const [row] = await db.select({ n: sql<number>`COUNT(*)` }).from(directory).limit(1);
+  return Number(row?.n ?? 0) > 0;
 }
 
 /** Where a cafe is, according to its own public listing. */
-export async function lookupSlug(slug: string | null | undefined): Promise<DirectoryEntry | null> {
+export async function lookupSlug(db: DB, slug: string | null | undefined): Promise<DirectoryEntry | null> {
   if (!slug) return null;
-  const dir = await getDirectory();
-  return dir?.bySlug[slug.trim().toLowerCase()] ?? null;
+  const [row] = await db
+    .select()
+    .from(directory)
+    .where(eq(directory.slug, slug.trim().toLowerCase()))
+    .limit(1);
+  if (!row) return null;
+  return { name: row.name, lat: row.lat, lng: row.lng, country: row.country, website: row.website };
 }

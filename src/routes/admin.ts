@@ -1,99 +1,120 @@
-import type { FastifyInstance } from 'fastify';
 import { sql } from 'drizzle-orm';
 import crypto from 'node:crypto';
-import { db } from '../db/index.js';
-import { env } from '../env.js';
+import { database } from '../db/index.js';
+import type { Env } from '../env.js';
 import { bearerFrom } from '../lib/tokens.js';
+import { clientAddress, json, problem, readJson, tooMany } from '../lib/http.js';
 
 /**
- * The view for us. One shared token in the environment, sent as a bearer
- * header. There are no accounts here because there is one reader.
+ * The view for us. One shared token, set with `wrangler secret put
+ * ADMIN_TOKEN`, sent as a bearer header. There are no accounts here because
+ * there is one reader.
  */
-/** Generous for one human reader, mean for anything guessing at the token. */
-const ADMIN_LIMIT = { max: 30, timeWindow: '1 minute' };
 
-export async function adminRoutes(app: FastifyInstance): Promise<void> {
-  app.addHook('preHandler', async (request, reply) => {
-    const presented = bearerFrom(request.headers.authorization) ?? '';
-    if (presented.length === 0) {
-      reply.code(401).send({ error: 'Not for you', code: 'admin/unauthorised' });
-      return;
-    }
-    // Compare fixed-length hashes rather than the strings themselves. Padding
-    // the raw values meant a multi-byte token produced buffers of different
-    // byte lengths, timingSafeEqual threw, and the reply was a 500 rather than
-    // a 401. Two sha256 digests are always 32 bytes, whatever was sent.
-    const a = crypto.createHash('sha256').update(presented).digest();
-    const b = crypto.createHash('sha256').update(env.ADMIN_TOKEN).digest();
-    if (!crypto.timingSafeEqual(a, b)) {
-      reply.code(401).send({ error: 'Not for you', code: 'admin/unauthorised' });
-    }
-  });
+const DAY_MS = 24 * 60 * 60 * 1000;
 
-  /** Who is out there, newest contact first. */
-  app.get('/api/v1/admin/installs', { config: { rateLimit: ADMIN_LIMIT } }, async (request) => {
-    const q = request.query as { limit?: string };
-    const limit = Math.max(1, Math.min(500, Number(q.limit) || 100));
-    const rows = await db.execute(sql`
-      WITH latest AS (
-        SELECT DISTINCT ON (install_id) *
-        FROM pings ORDER BY install_id, received_at DESC
-      )
-      SELECT
-        i.id, i.created_at, i.last_seen_at, i.app_version, i.level, i.country,
-        i.cafe_name, i.is_blocked,
-        l.repairs_recorded, l.repairs_fixed, l.sessions_held, l.co2_saved_kg,
-        (SELECT COUNT(*)::int FROM pings p WHERE p.install_id = i.id) AS ping_count
-      FROM installs i
-      LEFT JOIN latest l ON l.install_id = i.id
-      ORDER BY i.last_seen_at DESC
-      LIMIT ${limit}
-    `);
-    return { installs: rows.rows };
-  });
+/** Milliseconds since 1970 as the ISO text Postgres used to hand back. */
+function iso(ms: unknown): string | null {
+  return typeof ms === 'number' ? new Date(ms).toISOString() : null;
+}
 
-  /** How the fleet is doing: versions, activity, growth. */
-  app.get('/api/v1/admin/overview', { config: { rateLimit: ADMIN_LIMIT } }, async () => {
-    const versions = await db.execute(sql`
-      SELECT COALESCE(app_version, 'unknown') AS version, COUNT(*)::int AS installs
-      FROM installs WHERE is_blocked = FALSE
-      GROUP BY 1 ORDER BY installs DESC
-    `);
-    const activity = await db.execute(sql`
-      SELECT
-        COUNT(*)::int AS total,
-        COUNT(*) FILTER (WHERE last_seen_at > NOW() - INTERVAL '2 days')::int  AS seen_2d,
-        COUNT(*) FILTER (WHERE last_seen_at > NOW() - INTERVAL '45 days')::int AS seen_45d,
-        COUNT(*) FILTER (WHERE level = 'community')::int                       AS on_the_map,
-        COUNT(*) FILTER (WHERE is_blocked)::int                                AS blocked
-      FROM installs
-    `);
-    const newPerWeek = await db.execute(sql`
-      SELECT to_char(date_trunc('week', created_at), 'YYYY-MM-DD') AS week,
-             COUNT(*)::int AS installs
-      FROM installs
-      WHERE created_at > NOW() - INTERVAL '26 weeks'
-      GROUP BY 1 ORDER BY 1
-    `);
-    return {
-      activity: activity.rows[0] ?? {},
-      versions: versions.rows,
-      newPerWeek: newPerWeek.rows,
-    };
-  });
+/**
+ * Rate limit first, then the token, as Fastify did. 30 a minute is generous
+ * for one human reader and mean for anything guessing at the token.
+ */
+async function admitted(request: Request, env: Env): Promise<Response | null> {
+  const { success } = await env.ADMIN_LIMIT.limit({ key: clientAddress(request) });
+  if (!success) return tooMany(60);
+  const presented = bearerFrom(request.headers.get('authorization') ?? undefined) ?? '';
+  // No token configured means nobody gets in, never that everybody does.
+  if (presented.length === 0 || !env.ADMIN_TOKEN) {
+    return problem(401, 'Not for you', 'admin/unauthorised');
+  }
+  // Compare fixed-length hashes rather than the strings themselves. Padding
+  // the raw values meant a multi-byte token produced buffers of different
+  // byte lengths, timingSafeEqual threw, and the reply was a 500 rather than
+  // a 401. Two sha256 digests are always 32 bytes, whatever was sent.
+  const a = crypto.createHash('sha256').update(presented).digest();
+  const b = crypto.createHash('sha256').update(env.ADMIN_TOKEN).digest();
+  if (!crypto.timingSafeEqual(a, b)) return problem(401, 'Not for you', 'admin/unauthorised');
+  return null;
+}
 
-  /** Silence a noisy or broken install without a deploy. */
-  app.post('/api/v1/admin/installs/:id/block', { config: { rateLimit: ADMIN_LIMIT } }, async (request, reply) => {
-    const { id } = request.params as { id: string };
-    const body = (request.body ?? {}) as { blocked?: boolean };
-    const blocked = body.blocked !== false;
-    const result = await db.execute(sql`
-      UPDATE installs SET is_blocked = ${blocked} WHERE id = ${id}::uuid RETURNING id
-    `);
-    if (result.rows.length === 0) {
-      reply.code(404).send({ error: 'No such install', code: 'admin/not_found' });
-      return;
-    }
-    return { ok: true, id, blocked };
+/** Who is out there, newest contact first. */
+export async function listInstalls(request: Request, env: Env): Promise<Response> {
+  const refused = await admitted(request, env);
+  if (refused) return refused;
+  const limit = Math.max(1, Math.min(500, Number(new URL(request.url).searchParams.get('limit')) || 100));
+  const db = database(env.DB);
+  const rows = await db.all<Record<string, unknown>>(sql`
+    WITH latest AS (
+      SELECT * FROM (
+        SELECT p.*, ROW_NUMBER() OVER (PARTITION BY install_id ORDER BY received_at DESC) AS rn
+        FROM pings p
+      ) WHERE rn = 1
+    )
+    SELECT
+      i.id, i.created_at, i.last_seen_at, i.app_version, i.level, i.country,
+      i.cafe_name, i.is_blocked,
+      l.repairs_recorded, l.repairs_fixed, l.sessions_held, l.co2_saved_kg,
+      (SELECT COUNT(*) FROM pings p WHERE p.install_id = i.id) AS ping_count
+    FROM installs i
+    LEFT JOIN latest l ON l.install_id = i.id
+    ORDER BY i.last_seen_at DESC
+    LIMIT ${limit}
+  `);
+  return json({
+    installs: rows.map((r) => ({
+      ...r,
+      created_at: iso(r.created_at),
+      last_seen_at: iso(r.last_seen_at),
+      is_blocked: Boolean(r.is_blocked),
+    })),
   });
+}
+
+/** How the fleet is doing: versions, activity, growth. */
+export async function overview(request: Request, env: Env): Promise<Response> {
+  const refused = await admitted(request, env);
+  if (refused) return refused;
+  const db = database(env.DB);
+  const now = Date.now();
+  const versions = await db.all(sql`
+    SELECT COALESCE(app_version, 'unknown') AS version, COUNT(*) AS installs
+    FROM installs WHERE is_blocked = 0
+    GROUP BY 1 ORDER BY installs DESC
+  `);
+  const [activity] = await db.all(sql`
+    SELECT
+      COUNT(*)                                                    AS total,
+      COUNT(*) FILTER (WHERE last_seen_at > ${now - 2 * DAY_MS})  AS seen_2d,
+      COUNT(*) FILTER (WHERE last_seen_at > ${now - 45 * DAY_MS}) AS seen_45d,
+      COUNT(*) FILTER (WHERE level = 'community')                 AS on_the_map,
+      COUNT(*) FILTER (WHERE is_blocked = 1)                      AS blocked
+    FROM installs
+  `);
+  // Weeks start on Monday, as Postgres's date_trunc('week') did: move forward
+  // to the Sunday ending the week, then back six days.
+  const newPerWeek = await db.all(sql`
+    SELECT date(created_at / 1000, 'unixepoch', 'weekday 0', '-6 days') AS week,
+           COUNT(*) AS installs
+    FROM installs
+    WHERE created_at > ${now - 26 * 7 * DAY_MS}
+    GROUP BY 1 ORDER BY 1
+  `);
+  return json({ activity: activity ?? {}, versions, newPerWeek });
+}
+
+/** Silence a noisy or broken install without a deploy. */
+export async function block(request: Request, env: Env, id: string): Promise<Response> {
+  const refused = await admitted(request, env);
+  if (refused) return refused;
+  const body = ((await readJson(request, 4096)) ?? {}) as { blocked?: unknown };
+  const blocked = body.blocked !== false;
+  const db = database(env.DB);
+  const rows = await db.all(sql`
+    UPDATE installs SET is_blocked = ${blocked ? 1 : 0} WHERE id = ${id} RETURNING id
+  `);
+  if (rows.length === 0) return problem(404, 'No such install', 'admin/not_found');
+  return json({ ok: true, id, blocked });
 }

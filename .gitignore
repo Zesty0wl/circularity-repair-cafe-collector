@@ -9,3 +9,5 @@ dist
 
 # Cloudflare API tokens kept next to the code. Never commit them.
 cftoken*.md
+.wrangler
+.dev.vars

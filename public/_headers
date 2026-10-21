@@ -1,0 +1,21 @@
+# Headers for the page and its files, which Cloudflare serves as static assets
+# without running the Worker. The API sets its own in src/lib/http.ts.
+#
+# The tile host is the only third party. MapLibre fetches the style, tiles,
+# fonts and icons from it, and runs its worker from our own origin, so
+# script-src 'self' covers the worker and nothing needs blob:.
+
+/*
+  Content-Security-Policy: default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self' https://tiles.openfreemap.org; frame-ancestors 'none'; base-uri 'self'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+
+# The page itself is revalidated on every visit, which is Cloudflare's default
+# for assets. It names the versions below, so they can be held for longer: a
+# new release changes their URLs.
+/app.js
+  Cache-Control: public, max-age=604800
+/styles.css
+  Cache-Control: public, max-age=604800
+/vendor/*
+  Cache-Control: public, max-age=2592000
