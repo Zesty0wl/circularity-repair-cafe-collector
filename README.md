@@ -12,7 +12,10 @@ there. A change to the payload has to be made in both places, and the
 
 Running at <https://repaircafetelemetry.bzwrd.co.uk>, which also serves the
 public page: the figures, a map of the cafes that asked to be on it, and a
-plain account of what is and is not collected.
+plain account of what is and is not collected. It is a Cloudflare Worker with
+a D1 database, in the Neil Johnson account, the same shape as the hub's own
+Worker edition. It used to be Docker on nostromo; see
+[`docs/plan-cloudflare-worker.md`](docs/plan-cloudflare-worker.md).
 
 ## What it holds, and what it refuses to
 
@@ -34,7 +37,9 @@ rather than trusted, so a client bug cannot put somebody on a public map.
 
 Never received or stored: names of people, anything about a visitor, item
 descriptions, notes, photos, or a raw IP address. The country comes from
-Cloudflare's `CF-IPCountry` header, so no address is ever kept.
+Cloudflare (`request.cf.country`), so no address is ever kept. The hourly rate
+limits are counted in a Durable Object named by a keyed hash of the address,
+and wiped an hour after the last request.
 
 ## The one thing to know before changing the queries
 
@@ -44,8 +49,10 @@ install*:
 
 ```sql
 WITH latest AS (
-  SELECT DISTINCT ON (install_id) * FROM pings
-  ORDER BY install_id, received_at DESC
+  SELECT * FROM (
+    SELECT p.*, ROW_NUMBER() OVER (PARTITION BY install_id ORDER BY received_at DESC) AS rn
+    FROM pings p
+  ) WHERE rn = 1
 )
 SELECT SUM(repairs_fixed) FROM latest;
 ```
@@ -58,6 +65,11 @@ Sending totals rather than daily deltas is deliberate: a hub that is offline
 for a week needs no outbox and no replay, because the next ping carries the
 full picture.
 
+The public figures go one step further and do not read `pings` at all: they
+sum the `verified_*` columns on `installs`, which hold what we fetched from
+each cafe's own site. See
+[`docs/proposal-verified-telemetry.md`](docs/proposal-verified-telemetry.md).
+
 ## API
 
 | Method | Path | Auth | What |
@@ -69,8 +81,8 @@ full picture.
 | GET | `/api/v1/admin/overview` | `ADMIN_TOKEN` | Versions, activity, new installs per week. |
 | GET | `/api/v1/admin/installs` | `ADMIN_TOKEN` | Who is out there, newest first. |
 | POST | `/api/v1/admin/installs/:id/block` | `ADMIN_TOKEN` | Silence a noisy install without a deploy. |
-| GET | `/health` | none | For the container healthcheck. |
-| GET | `/` | none | The public page. Static files from `public/`, MapLibre from `node_modules`, map tiles from OpenFreeMap. |
+| GET | `/health` | none | For monitoring. Touches the database. |
+| GET | `/` | none | The public page, served as static assets: `public/` and MapLibre, map tiles from OpenFreeMap. |
 
 `POST /api/v1/ping` answers `{ ok, token?, nextPingAfterHours }`. `token` appears
 only on the call that mints it. `nextPingAfterHours` lets us slow every install
@@ -79,65 +91,90 @@ down later without shipping new client code.
 ## Running it
 
 ```bash
-cp .env.example .env
-# Both secrets: openssl rand -hex 24
-docker compose up -d --build
-curl -fsS http://127.0.0.1:5040/health
+npm install
+npm test            # builds the assets, then runs every test inside workerd
+npm run dev         # wrangler dev on http://localhost:8787, with a local D1
 ```
 
-Host port **5040**, bound to loopback only. nginx on this box is what faces the
-internet, the same arrangement as the hub on 5026.
+`wrangler dev` reads secrets from `.dev.vars`, which git ignores:
 
-### Putting it on the internet
+```
+ADMIN_TOKEN=a-long-random-string
+LIMIT_SECRET=another-long-random-string
+```
+
+Give the local database its tables with
+`npx wrangler d1 migrations apply repair-cafe-telemetry --local`.
+
+## Deploying
+
+Wrangler needs a token for the Neil Johnson account in
+`CLOUDFLARE_API_TOKEN`, and the account id in `CLOUDFLARE_ACCOUNT_ID`.
 
 ```bash
-sudo cp nginx/repaircafetelemetry.bzwrd.co.uk.conf \
-        /etc/nginx/sites-available/repaircafetelemetry.bzwrd.co.uk
-sudo ln -s /etc/nginx/sites-available/repaircafetelemetry.bzwrd.co.uk \
-           /etc/nginx/sites-enabled/
-sudo nginx -t && sudo systemctl reload nginx
+npm run db:migrate   # only when migrations/ has something new
+npm run deploy       # builds dist/assets, uploads the Worker and the page
 ```
 
-Then one **proxied** A record for `repaircafetelemetry.bzwrd.co.uk` pointing at
-this host. The certificate is the Cloudflare origin certificate for
-`*.bzwrd.co.uk`, already on the box. Keeping Cloudflare's proxy on is not
-optional: `CF-IPCountry` is where the country comes from.
+Secrets are set once and survive deploys:
+
+```bash
+openssl rand -hex 32 | npx wrangler secret put ADMIN_TOKEN
+openssl rand -hex 32 | npx wrangler secret put LIMIT_SECRET
+```
+
+The hostname is a **custom domain** on the Worker, not a DNS record pointing
+somewhere. The daily cron (04:17 UTC) refreshes the repaircafe.org directory.
 
 ## Checking on it
 
 ```bash
-docker compose logs -f app
-curl -s http://127.0.0.1:5040/api/v1/public/summary | jq
+npx wrangler tail repair-cafe-telemetry
+curl -s https://repaircafetelemetry.bzwrd.co.uk/api/v1/public/summary | jq
 curl -s -H "Authorization: Bearer $ADMIN_TOKEN" \
-     http://127.0.0.1:5040/api/v1/admin/overview | jq
+     https://repaircafetelemetry.bzwrd.co.uk/api/v1/admin/overview | jq
 ```
+
+Logs are also in the dashboard, under the Worker's Observability tab.
 
 ## Backups
 
-One volume, `repair-cafe-telemetry-db`:
+D1 keeps 30 days of history and can be put back to any minute of it:
 
 ```bash
-docker exec repair-cafe-telemetry-db pg_dump -U telemetry telemetry \
-  | gzip > telemetry-$(date +%F).sql.gz
+npx wrangler d1 time-travel restore repair-cafe-telemetry --timestamp 2026-10-21T18:00:00Z
 ```
+
+For a copy to keep: `npx wrangler d1 export repair-cafe-telemetry --remote --output telemetry-$(date +%F).sql`.
 
 ## Layout
 
 ```
 src/
-  index.ts              start-up, health, rate limiting
-  env.ts                settings, validated at boot
-  db/schema.ts          installs, pings
-  db/migrate.ts         idempotent DDL, same approach as the hub
+  worker.ts             the entry point: fetch, and the daily cron
+  app.ts                routing, the API-wide rate limit, errors
+  env.ts                bindings, secrets and settings
+  limiter.ts            hourly limits per address, in a Durable Object
+  db/schema.ts          installs, pings, directory (drizzle, matching migrations/)
   lib/payload.ts        what a hub may send, and nothing else
   lib/tokens.ts         issue, hash, compare; country from Cloudflare
+  lib/http.ts           JSON answers and reading a body with a ceiling
   routes/ping.ts        ingest and forget
   routes/publicStats.ts summary and map
   routes/admin.ts       the view for us
-services/directory.ts a mirror of the public repaircafe.org directory, so a
-                      cafe's slug becomes a pin without us storing a location
-public/               the public page: index.html, styles.css, app.js
-nginx/                  the vhost to install on the host
+  services/verify.ts    fetching a cafe's own site to prove it is real
+  services/directory.ts a copy of the public repaircafe.org directory, so a
+                        cafe's slug becomes a pin without us storing a location
+migrations/             D1 schema, applied with wrangler
+public/                 the public page: index.html, styles.css, app.js, _headers
+scripts/
+  build-assets.mjs      public/ and MapLibre into dist/assets, version stamped
+  export-postgres.mjs   the Docker edition's data into D1 (used once, at the move)
+  export-directory.mjs  its cached directory into D1 (likewise)
+test/                   vitest in workerd, against the real wrangler.jsonc
 ```
+
+The Docker edition (`Dockerfile`, `docker-compose.yml`, `nginx/`,
+`scripts/install-nginx.sh`) stays until it has been switched off for good.
 
 MIT, like the hub. See [LICENSE](./LICENSE) and [CHANGELOG.md](./CHANGELOG.md).

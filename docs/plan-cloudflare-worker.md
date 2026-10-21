@@ -1,6 +1,6 @@
 # Plan: move the collector from Docker to a Cloudflare Worker
 
-**Status:** plan, being built
+**Status:** built and staged on workers.dev; cutover not yet done
 **Written:** 21 October 2026
 
 ## Where it is now
@@ -174,6 +174,67 @@ address is stored, and nothing that identifies one outlives the window.
    - delete `Dockerfile`, `docker-compose.yml`, `nginx/` and
      `scripts/install-nginx.sh`;
    - rewrite the README's running and deploying sections.
+
+## Where it stands
+
+Built on the `cloudflare-worker` branch, 21 October 2026:
+
+- **Tests.** 51 run inside workerd against the real `wrangler.jsonc`, covering
+  every point in step 3 above.
+- **Staging.** The Worker is deployed at
+  <https://repair-cafe-telemetry.jonnokid.workers.dev>, with D1
+  `repair-cafe-telemetry` (WEUR) and both secrets set. `ADMIN_TOKEN` was
+  copied from nostromo's `.env`, so the admin token in use today works
+  unchanged.
+- **Copied data.** Production's data and its cached directory, copied that
+  afternoon, give a summary and map identical to the live site's.
+- **End to end.** A made-up install pinged the staged Worker claiming
+  `https://repaircafe.circularity.org`:
+  - its country came through as GB;
+  - Cloudflare fetched that real hub and refused the claim ("that site
+    belongs to a different install");
+  - forget then removed it and its ping.
+- **repaircafe.org was down** all that day ("Site Currently Unavailable").
+  That is why `scripts/export-directory.mjs` exists: the map keeps its pins
+  from nostromo's cached copy until the cron can fetch a fresh one.
+
+## Cutover, step by step
+
+The data has to be copied again at cutover, because hubs keep pinging the
+Docker edition until then. With `S` a scratch folder outside the repo, and
+wrangler given the Neil Johnson token:
+
+```bash
+# 1. Copy the cached directory while the app container is still running.
+#    Pings do not change it.
+ssh nostromo 'docker exec repair-cafe-telemetry cat /data/repair-cafe-directory.json' \
+  | node scripts/export-directory.mjs > $S/directory.sql
+npx wrangler d1 execute repair-cafe-telemetry --remote --file $S/directory.sql -y
+
+# 2. Stop taking pings on the old side, then copy the data across. The file
+#    replaces what D1 holds. Postgres stays up.
+ssh nostromo 'cd ~/docker/circularity/repair-cafe-telemetry && docker compose stop app'
+ssh nostromo "docker exec repair-cafe-telemetry-db psql -U telemetry -d telemetry -At -c \"
+  SELECT json_build_object(
+    'installs', (SELECT COALESCE(json_agg(i), '[]') FROM installs i),
+    'pings',    (SELECT COALESCE(json_agg(p ORDER BY p.id), '[]') FROM pings p))\"" \
+  | node scripts/export-postgres.mjs > $S/export.sql
+npx wrangler d1 execute repair-cafe-telemetry --remote --file $S/export.sql -y
+
+# 3. Attach the hostname. Cloudflare swaps the proxied A record for the Worker.
+#    Add to wrangler.jsonc, then deploy:
+#      "routes": [{ "pattern": "repaircafetelemetry.bzwrd.co.uk", "custom_domain": true }]
+#    If the existing A record blocks it, delete that record and deploy again.
+npx wrangler deploy
+
+# 4. Check: /health, the summary and map against the counts copied in step 2,
+#    the page in a browser, and the next real ping in `wrangler tail`.
+```
+
+Then merge `cloudflare-worker` into `main`. The checkout on nostromo stays on
+the old commit and its image stays built, so rolling back is: remove the
+custom domain, put the A record back pointing at nostromo, and run
+`docker compose start app`.
 
 ## Settled
 

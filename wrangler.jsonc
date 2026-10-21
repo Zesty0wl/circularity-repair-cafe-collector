@@ -30,7 +30,7 @@
     {
       "binding": "DB",
       "database_name": "repair-cafe-telemetry",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "15cd41bc-ef8d-42a1-9466-04098776a679",
       "migrations_dir": "migrations"
     }
   ],
