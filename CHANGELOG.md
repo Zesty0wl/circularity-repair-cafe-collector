@@ -2,6 +2,37 @@
 
 Notable changes to the Repair Cafe Hub telemetry collector. Newest first.
 
+## 3.0.0 — 21 October 2026
+
+### Changed
+
+- **The collector is a Cloudflare Worker now, not Docker on nostromo.** Same
+  hostname, same API, same tokens, so no hub has to change anything. Its data
+  is in D1, copied across from Postgres at the switch with nothing lost.
+  [`docs/plan-cloudflare-worker.md`](docs/plan-cloudflare-worker.md) has the
+  reasons and how it was done.
+- The page and its files are served as static assets, with the same security
+  headers as before (`public/_headers`), so viewing it never runs any code.
+- Hourly rate limits are kept in a Durable Object named by a keyed hash of the
+  address, and wiped an hour after the last request. They used to live in the
+  server's memory. Neither has ever held an address.
+- The repaircafe.org directory is refreshed by a daily cron and kept in D1. It
+  used to be refreshed when a visitor happened to need it.
+- `HEAD` is answered wherever `GET` is, as Fastify did.
+
+### Security
+
+- Verification can no longer be pointed at anything private. From Docker, a
+  café's address could name the host's own services, and the code checked
+  every DNS answer to stop that. A Worker has no private network to reach,
+  and `global_fetch_strictly_public` sends every check out over the public
+  internet. The other rules stay: https only, no bare addresses, no redirects,
+  a fixed path, a short timeout and a size cap.
+
+### Added
+
+- Tests, 51 of them, running in the real Workers runtime. There were none.
+
 ## 2.0.4 — 21 October 2026
 
 ### Fixed

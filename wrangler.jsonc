@@ -23,8 +23,9 @@
 
   "workers_dev": true,
   "preview_urls": false,
-  // repaircafetelemetry.bzwrd.co.uk is attached as a custom domain at cutover.
-  // See docs/plan-cloudflare-worker.md.
+  // Every hub sends here by default, so the name must never change. A custom
+  // domain: Cloudflare owns the DNS record and points it at the Worker.
+  "routes": [{ "pattern": "repaircafetelemetry.bzwrd.co.uk", "custom_domain": true }],
 
   "d1_databases": [
     {

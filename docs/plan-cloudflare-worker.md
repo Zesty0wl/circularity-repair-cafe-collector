@@ -1,6 +1,6 @@
 # Plan: move the collector from Docker to a Cloudflare Worker
 
-**Status:** built and staged on workers.dev; cutover not yet done
+**Status:** live on the Worker since 21 October 2026, 19:17 BST. Docker edition stopped, not yet removed
 **Written:** 21 October 2026
 
 ## Where it is now
@@ -197,6 +197,38 @@ Built on the `cloudflare-worker` branch, 21 October 2026:
 - **repaircafe.org was down** all that day ("Site Currently Unavailable").
   That is why `scripts/export-directory.mjs` exists: the map keeps its pins
   from nostromo's cached copy until the cron can fetch a fresh one.
+
+## The cutover, as it happened
+
+21 October 2026, about two minutes from stopping the app to the Worker
+answering on the hostname.
+
+1. The directory cache was copied first: 3,958 cafés, fetched that morning.
+2. The app container was stopped, and Postgres copied into D1. D1 then held 4
+   installs and 114 pings (highest ping id 145), the same as Postgres.
+3. The first deploy with the custom domain was refused, because the A
+   record existed (code 100117). That record was deleted (it was a proxied A
+   to `87.106.203.234`, id `330ffa0fc7fd38a1acf502717d5dd022`) and the
+   deploy repeated. The hostname now has Cloudflare's own Worker record.
+4. Checks on the hostname:
+   - `/health` answered;
+   - the summary and map matched, field for field, the copies taken
+     before step 1;
+   - the security headers were there, and admin refused a request without
+     its token;
+   - the page drew Woodville's pin;
+   - a test ping got a token and was then forgotten.
+
+**Rolling back**, should it be needed:
+
+1. Remove the custom domain:
+   `"routes"` out of wrangler.jsonc, then deploy, or remove it in the dashboard.
+2. Recreate the proxied A record to `87.106.203.234`.
+3. `ssh nostromo 'cd ~/docker/circularity/repair-cafe-telemetry && docker compose start app'`.
+
+Pings that reached D1 meanwhile are not copied back, and do not need to be.
+
+**Still to do**, after two quiet weeks: step 8 above.
 
 ## Cutover, step by step
 
