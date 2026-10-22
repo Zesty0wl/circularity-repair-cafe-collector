@@ -94,6 +94,14 @@ describe('the directory', () => {
     ]);
   });
 
+  it('skips a badly encoded link instead of failing the whole refresh', async () => {
+    const broken = { link: 'https://www.repaircafe.org/en/cafe/bad%E0%A4%A/', coordinate: '1,1', name: 'Broken', address: '', external_link: null };
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => Response.json([broken, ...upstream]));
+    await runCron();
+    const rows = await env.DB.prepare('SELECT slug FROM directory').all<any>();
+    expect(rows.results.map((r: any) => r.slug)).toEqual(['repair-cafe-woodville']);
+  });
+
   it('keeps the old copy when repaircafe.org answers with nothing', async () => {
     await env.DB.prepare("INSERT INTO directory VALUES ('kept', 'Kept', 1, 1, null, null)").run();
     vi.spyOn(globalThis, 'fetch').mockImplementation(async () => Response.json([]));

@@ -37,10 +37,39 @@ export interface DirectoryEntry {
   website: string | null;
 }
 
+/** The directory is about 1.6 MB today. Anything far bigger is not the directory. */
+const MAX_DIRECTORY_BYTES = 20 * 1024 * 1024;
+
+/** Read a response as text, refusing to read past a ceiling. */
+async function readCapped(res: Response, maxBytes: number): Promise<string> {
+  const reader = res.body?.getReader();
+  if (!reader) throw new Error('repaircafe.org sent nothing');
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      void reader.cancel();
+      throw new Error('the directory was larger than we will read');
+    }
+    chunks.push(value);
+  }
+  const decoder = new TextDecoder();
+  return chunks.map((c) => decoder.decode(c, { stream: true })).join('') + decoder.decode();
+}
+
 function slugFromLink(link: string | null | undefined): string | null {
   if (!link) return null;
   const m = /\/cafe\/([^/?#]+)/.exec(link);
-  return m ? decodeURIComponent(m[1]!).toLowerCase() : null;
+  if (!m) return null;
+  // One badly encoded link must cost us that cafe, not the whole refresh.
+  try {
+    return decodeURIComponent(m[1]!).toLowerCase();
+  } catch {
+    return null;
+  }
 }
 
 function parseCoordinate(value: string | null | undefined): { lat: number; lng: number } | null {
@@ -83,7 +112,7 @@ async function fetchUpstream(): Promise<Record<string, DirectoryEntry>> {
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`repaircafe.org responded ${res.status}`);
-  const body = (await res.json()) as unknown;
+  const body = JSON.parse(await readCapped(res, MAX_DIRECTORY_BYTES)) as unknown;
   if (!Array.isArray(body)) throw new Error('repaircafe.org did not return a list');
 
   const bySlug: Record<string, DirectoryEntry> = {};

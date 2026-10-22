@@ -39,6 +39,9 @@ const MAX_BYTES = 64 * 1024;
 /** Re-check roughly daily, matching the ping rhythm. */
 export const RECHECK_AFTER_MS = 20 * 60 * 60 * 1000;
 
+/** The largest figure a hub can report: the same cap a ping has. */
+const MAX_FIGURE = 100_000_000;
+
 const USER_AGENT =
   'CircularityRepairCafeTelemetry/1.0 verification (+https://github.com/Zesty0wl/circularity-repair-cafe-collector)';
 
@@ -48,6 +51,8 @@ export interface VerifyOutcome {
   error?: string;
   host?: string;
   name?: string | null;
+  /** The hash of the hub's claim secret, when the site publishes one. */
+  claimHash?: string | null;
   figures?: {
     repairsRecorded: number;
     repairsFixed: number;
@@ -143,19 +148,33 @@ export async function verifyInstall(installId: string, publicUrl: string | null)
       return { ok: false, error: 'that site belongs to a different install' };
     }
 
-    const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : 0);
+    // The same limits as a ping. One site must not be able to swamp the
+    // worldwide totals with an impossible number. A missing figure counts as
+    // 0, but one that is there and impossible fails the check.
+    const figure = (v: unknown, whole: boolean): number | null => {
+      if (v === undefined || v === null) return 0;
+      if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > MAX_FIGURE) return null;
+      return whole && !Number.isInteger(v) ? null : v;
+    };
+    const figures = {
+      repairsRecorded: figure(body.repairsRecorded, true),
+      repairsFixed: figure(body.repairsFixed, true),
+      repairsNotFixed: figure(body.repairsNotFixed, true),
+      sessionsHeld: figure(body.sessionsHeld, true),
+      volunteers: figure(body.volunteers, true),
+      co2SavedKg: figure(body.co2SavedKg, false),
+    };
+    if (Object.values(figures).some((v) => v === null)) {
+      return { ok: false, error: 'the hub served figures we cannot use' };
+    }
+    const claimHash =
+      typeof body.claimHash === 'string' && /^[0-9a-f]{64}$/.test(body.claimHash) ? body.claimHash : null;
     return {
       ok: true,
       host: target.hostname,
       name: typeof body.name === 'string' && body.name.trim() ? body.name.trim().slice(0, 200) : null,
-      figures: {
-        repairsRecorded: num(body.repairsRecorded),
-        repairsFixed: num(body.repairsFixed),
-        repairsNotFixed: num(body.repairsNotFixed),
-        sessionsHeld: num(body.sessionsHeld),
-        volunteers: num(body.volunteers),
-        co2SavedKg: num(body.co2SavedKg),
-      },
+      claimHash,
+      figures: figures as Required<VerifyOutcome>['figures'],
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'the check failed';
@@ -192,7 +211,13 @@ export async function verifyIfDue(db: DB, env: Env, installId: string, publicUrl
       return;
     }
 
-    const outcome = await verifyInstall(installId, publicUrl);
+    let outcome = await verifyInstall(installId, publicUrl);
+    // A hub from 1.13.2 publishes the hash of its claim secret. If it does not
+    // match what this install sent us, the install is not that hub: somebody
+    // claimed its id before it did. The real hub can take the id back.
+    if (outcome.ok && outcome.claimHash && outcome.claimHash !== row.claimHash) {
+      outcome = { ok: false, error: 'that site belongs to a different install' };
+    }
     // The country comes from the cafe's own repaircafe.org listing, under the
     // same rule as its pin. Only Community cafes link one. Where a request
     // came from tells us nothing: hubs are Workers, and their requests leave
@@ -219,6 +244,7 @@ export async function verifyIfDue(db: DB, env: Env, installId: string, publicUrl
               verifiedVolunteers: outcome.figures.volunteers,
               verifiedCo2SavedKg: outcome.figures.co2SavedKg,
               ...(outcome.name ? { cafeName: outcome.name } : {}),
+              verifiedName: outcome.name ?? null,
             }
           : {}),
       })
@@ -229,4 +255,20 @@ export async function verifyIfDue(db: DB, env: Env, installId: string, publicUrl
   } catch (err) {
     console.warn(JSON.stringify({ err: String(err), msg: 'verification failed unexpectedly' }));
   }
+}
+
+/**
+ * What we tell the sender about a failed check, in a few plain words.
+ *
+ * The full reason, with the status the site answered and any error text, is
+ * kept for our own records. Sending it back would let anybody use us to learn
+ * how other people's servers answer, so the sender gets only the category,
+ * which is all a cafe needs to put its settings right.
+ */
+export function reasonForSender(error: string | null | undefined): string | null {
+  if (!error) return null;
+  if (error === 'no usable https address was given') return error;
+  if (error === 'that site belongs to a different install') return error;
+  if (error === 'the hub served figures we cannot use') return error;
+  return 'we could not read /api/public/telemetry at that address';
 }

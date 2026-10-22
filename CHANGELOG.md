@@ -2,6 +2,39 @@
 
 Notable changes to the Repair Cafe Hub telemetry collector. Newest first.
 
+## 3.2.0 — 22 October 2026
+
+### Security
+
+These come from a security review of the collector.
+
+- **The map shows only what we checked.** A verified hub's name, link and pin
+  came from its pings, which it could change at any time between checks. The
+  map now shows the name its site served at the last check, a link to the host
+  we verified, and a pin from its own repaircafe.org listing. Migration
+  `0003_verified_name_and_claim` adds `verified_name`.
+- **An install id no longer decides who owns an install.** A stranger could
+  copy a hub's id from its site and claim it before the hub did, then show the
+  real cafe on the map with their own link, and lock the hub out. Hubs from
+  1.13.2 send a claim secret and publish only its hash. A site whose hash does
+  not match never passes the check, and the real hub can take its id back.
+  Older hubs carry on as before.
+- **Fetched figures have the same limits as pings.** A site could serve
+  1e300 repairs and swamp the worldwide totals. Counts must now be whole
+  numbers up to 100 million, or the check fails.
+- **The sender only learns what kind of check failed.** The full reason,
+  including the status another server answered, was sent back in the ping
+  reply. It is still kept for our records.
+
+### Fixed
+
+- One badly encoded link in the repaircafe.org directory stopped the whole
+  daily refresh. That cafe is now skipped instead.
+- The public summary and map ignore the query string, so `?x=1` can no longer
+  be used to skip the cache.
+- The directory download has a size limit, and feature names in a ping must be
+  short keys, not free text.
+
 ## 3.1.0 — 22 October 2026
 
 ### Fixed

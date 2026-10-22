@@ -36,7 +36,11 @@ function activeSince(): number {
  * domain; on workers.dev this quietly computes every time.
  */
 async function cached(request: Request, ctx: ExecutionContext, build: () => Promise<unknown>): Promise<Response> {
-  const key = new Request(new URL(request.url).toString(), { method: 'GET' });
+  // The answer is the same for everybody, so the query string is ignored.
+  // Otherwise ?x=1, ?x=2... would each miss the cache and query D1.
+  const url = new URL(request.url);
+  url.search = '';
+  const key = new Request(url.toString(), { method: 'GET' });
   const cache = caches.default;
   const hit = await cache.match(key);
   if (hit) return hit;
@@ -109,55 +113,44 @@ export async function summary(request: Request, env: Env, ctx: ExecutionContext)
 export async function map(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   return cached(request, ctx, async () => {
     const db = database(env.DB);
-    // Verified installs only, and the name is the one that site served us
-    // rather than one anybody could type. A slug is not proof of anything and
-    // is no longer resolved: see docs/proposal-verified-telemetry.md.
+    // Verified installs only, and everything shown comes from what we checked
+    // ourselves, never from a ping: the name the site served us, a link to
+    // the host we verified, and a pin from the cafe's own listing. A ping can
+    // say anything, and pings arrive between checks.
     const rows = await db.all<Record<string, unknown>>(sql`
       SELECT
-        cafe_name, cafe_url, cafe_slug, verified_host, country,
-        cafe_lat, cafe_lng,
+        verified_name, cafe_slug, verified_host, country,
         verified_repairs_fixed, verified_sessions_held, verified_co2_saved_kg
       FROM installs
       WHERE level = 'community'
         AND is_blocked = 0
         AND verified_at IS NOT NULL
         AND last_seen_at > ${activeSince()}
-      ORDER BY cafe_name
+      ORDER BY verified_name
     `);
 
     // The cron fills the directory daily. Until it first has, a map request
     // waits for the fill rather than caching a map with pins missing. If
     // repaircafe.org is down, only one request in ten minutes waits to find out.
-    if (rows.some((r) => r.cafe_lat === null && r.cafe_slug) && !(await haveDirectory(db))) {
+    if (rows.some((r) => r.cafe_slug) && !(await haveDirectory(db))) {
       if (Date.now() - lastDirectoryAttempt > DIRECTORY_RETRY_MS) {
         lastDirectoryAttempt = Date.now();
         await refreshDirectory(db).catch(() => 0);
       }
     }
 
-    // Where the pin comes from. Own coordinates win. Otherwise the cafe's
-    // repaircafe.org listing may supply them, under the rule in
-    // placeFromListing(): never from a listing that belongs to another site.
+    // The pin comes from the cafe's own repaircafe.org listing, under the rule
+    // in placeFromListing(): never from a listing that belongs to another site.
     const cafes = await Promise.all(
       rows.map(async (r: any) => {
-        let lat = r.cafe_lat === null ? null : Number(r.cafe_lat);
-        let lng = r.cafe_lng === null ? null : Number(r.cafe_lng);
-        let placedBy: 'itself' | 'its repaircafe.org listing' | null = lat === null ? null : 'itself';
-        if (lat === null) {
-          const place = await placeFromListing(db, r.cafe_slug, r.verified_host);
-          if (place) {
-            lat = place.lat;
-            lng = place.lng;
-            placedBy = 'its repaircafe.org listing';
-          }
-        }
+        const place = await placeFromListing(db, r.cafe_slug, r.verified_host);
         return {
-          name: r.cafe_name,
-          url: r.cafe_url,
+          name: r.verified_name ?? r.verified_host,
+          url: `https://${r.verified_host}/`,
           host: r.verified_host,
-          lat,
-          lng,
-          placedBy,
+          lat: place?.lat ?? null,
+          lng: place?.lng ?? null,
+          placedBy: place ? ('its repaircafe.org listing' as const) : null,
           country: r.country,
           repairsFixed: Number(r.verified_repairs_fixed ?? 0),
           sessionsHeld: Number(r.verified_sessions_held ?? 0),

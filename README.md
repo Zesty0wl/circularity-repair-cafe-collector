@@ -73,6 +73,17 @@ sum the `verified_*` columns on `installs`, which hold what we fetched from
 each cafe's own site. See
 [`docs/proposal-verified-telemetry.md`](docs/proposal-verified-telemetry.md).
 
+The map follows the same rule. It shows the name the cafe's site served at its
+last check (`verified_name`), a link to the host we verified, and a pin from the
+cafe's own repaircafe.org listing. Nothing a ping says reaches the map, because
+pings arrive between checks and can say anything.
+
+**Who owns an install.** A hub's install id is public: its site shows it, so we
+can check the hub is real. From hub 1.13.2 a hub also makes a claim secret,
+sends it with its pings, and publishes only its hash. A site whose hash does not
+match the install's never passes the check, and the real hub can take its id
+back with its secret. See `src/routes/ping.ts` and `src/services/verify.ts`.
+
 ## API
 
 | Method | Path | Auth | What |

@@ -6,7 +6,7 @@ import { cafeDetailsFor, pingSchema } from '../lib/payload.js';
 import { bearerFrom, hashToken, newToken, tokensMatch } from '../lib/tokens.js';
 import { clientAddress, json, problem, readJson, tooMany } from '../lib/http.js';
 import { limitFor } from '../limiter.js';
-import { verifyIfDue } from '../services/verify.js';
+import { verifyIfDue, reasonForSender } from '../services/verify.js';
 
 /**
  * Taking a ping
@@ -87,6 +87,7 @@ export async function ping(request: Request, env: Env, ctx: ExecutionContext): P
       db.insert(installs).values({
         id: body.installId,
         tokenHash: hashToken(issuedToken),
+        claimHash: body.claim ? hashToken(body.claim) : null,
         appVersion: body.app.version,
         level: body.level,
         cafeSlug: cafe.slug,
@@ -97,10 +98,43 @@ export async function ping(request: Request, env: Env, ctx: ExecutionContext): P
       }),
       pingRow,
     ]);
-  } else {
-    if (!presented || !tokensMatch(presented, existing.tokenHash)) {
+  } else if (!presented || !tokensMatch(presented, existing.tokenHash)) {
+    // A hub that has lost its token, or never got one because somebody else
+    // claimed its id first, can take the id back with its claim secret. It
+    // may if the secret is the one this install was claimed with, or if the
+    // install was never verified: then whoever holds it has proved nothing.
+    // A verified install can only be taken back with its own secret.
+    const sameHub = body.claim && existing.claimHash && tokensMatch(body.claim, existing.claimHash);
+    const unproven = body.claim && !existing.verifiedAt;
+    if (!sameHub && !unproven) {
       return problem(401, 'That token does not match', 'ping/bad_token');
     }
+    if (existing.isBlocked) return json({ ok: true, nextPingAfterHours: 168 }, 202);
+    if (!sameHub && !(await limiter.take('new-install', NEW_INSTALLS_PER_HOUR))) {
+      return problem(429, 'Too many new installs from here. Try again later.', 'ping/too_many_new');
+    }
+    issuedToken = newToken();
+    await db.batch([
+      db
+        .update(installs)
+        .set({
+          tokenHash: hashToken(issuedToken),
+          claimHash: hashToken(body.claim!),
+          lastSeenAt: new Date(),
+          appVersion: body.app.version,
+          level: body.level,
+          cafeSlug: cafe.slug,
+          cafeName: cafe.name,
+          cafeUrl: cafe.url,
+          cafeLat: cafe.lat,
+          cafeLng: cafe.lng,
+          // A new holder starts unproven, and is checked straight away.
+          ...(sameHub ? {} : { verifiedAt: null, verifiedHost: null, verifiedName: null, verifyCheckedAt: null }),
+        })
+        .where(eq(installs.id, body.installId)),
+      pingRow,
+    ]);
+  } else {
     if (existing.isBlocked) {
       // Answer politely and drop it. Telling a blocked install that it is
       // blocked only invites it to change its id.
@@ -120,6 +154,8 @@ export async function ping(request: Request, env: Env, ctx: ExecutionContext): P
           cafeUrl: cafe.url,
           cafeLat: cafe.lat,
           cafeLng: cafe.lng,
+          // The token holder is this install, so its secret is the one to keep.
+          ...(body.claim ? { claimHash: hashToken(body.claim) } : {}),
         })
         .where(eq(installs.id, body.installId)),
       pingRow,
@@ -151,7 +187,7 @@ export async function ping(request: Request, env: Env, ctx: ExecutionContext): P
     verification: {
       verified: Boolean(after?.verifiedAt),
       // Null on the very first ping, because the check is still running.
-      reason: after?.verifiedAt ? null : (after?.verifyError ?? null),
+      reason: after?.verifiedAt ? null : reasonForSender(after?.verifyError),
       // Said plainly, because it is the actionable part.
       help: after?.verifiedAt
         ? null

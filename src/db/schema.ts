@@ -59,6 +59,10 @@ export const installs = sqliteTable(
     verifiedSessionsHeld: integer('verified_sessions_held'),
     verifiedVolunteers: integer('verified_volunteers'),
     verifiedCo2SavedKg: real('verified_co2_saved_kg'),
+    /** The name the site served at the last check. The only name we publish. */
+    verifiedName: text('verified_name'),
+    /** sha256 of the claim secret the hub sent. See services/verify.ts. */
+    claimHash: text('claim_hash'),
   },
   (t) => [
     index('idx_installs_last_seen_at').on(t.lastSeenAt),

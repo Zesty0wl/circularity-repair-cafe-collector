@@ -19,6 +19,8 @@ interface Seed {
   fixed?: number;
   notFixed?: number;
   co2?: number;
+  /** The name the site served at its check. Defaults to `name`. */
+  verifiedName?: string;
 }
 
 async function seed(s: Seed) {
@@ -26,24 +28,29 @@ async function seed(s: Seed) {
   await env.DB.prepare(
     `INSERT INTO installs (id, token_hash, created_at, last_seen_at, level, country, cafe_name, cafe_slug, cafe_lat, cafe_lng,
        is_blocked, verified_at, verified_host, verified_repairs_recorded, verified_repairs_fixed, verified_repairs_not_fixed,
-       verified_sessions_held, verified_volunteers, verified_co2_saved_kg)
-     VALUES (?, 'x', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       verified_sessions_held, verified_volunteers, verified_co2_saved_kg, verified_name)
+     VALUES (?, 'x', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       s.id ?? crypto.randomUUID(), now, now - (s.lastSeenDaysAgo ?? 0) * DAY, s.level ?? 'community', s.country ?? 'GB',
       s.name ?? 'A café', s.slug ?? null, s.lat ?? null, s.lng ?? null, s.blocked ? 1 : 0,
       s.verified === false ? null : now, s.host ?? 'cafe.example.org',
       (s.fixed ?? 10) + (s.notFixed ?? 5), s.fixed ?? 10, s.notFixed ?? 5, 4, 2, s.co2 ?? 100.04,
+      s.verified === false ? null : (s.verifiedName ?? s.name ?? 'A café'),
     )
     .run();
 }
 
-// Both answers are cached for five minutes, and the test runtime has a cache,
-// so each test asks for its own URL.
-let n = 0;
-const fresh = (path: string) => `${path}?case=${++n}`;
+// Both answers are cached for five minutes, and the query string is ignored,
+// so each test starts with an empty cache.
+const fresh = (path: string) => path;
 
-beforeEach(clean);
+beforeEach(async () => {
+  await clean();
+  for (const path of ['/api/v1/public/summary', '/api/v1/public/map']) {
+    await caches.default.delete(new Request(`https://repaircafetelemetry.test${path}`));
+  }
+});
 
 describe('summary', () => {
   it('counts only verified, active, unblocked installs, and says how many it could not check', async () => {
@@ -85,15 +92,29 @@ describe('summary', () => {
 });
 
 describe('map', () => {
-  it('pins verified community cafés that gave coordinates', async () => {
-    await seed({ name: 'Woodville', lat: 52.77, lng: -1.53, host: 'woodville.example.org' });
-    await seed({ name: 'Standard level', level: 'standard', lat: 50, lng: 0 });
-    await seed({ name: 'Unverified', verified: false, lat: 50, lng: 0 });
+  it('shows only what was checked: the served name, the verified host, and a pin from the listing', async () => {
+    await env.DB.prepare("INSERT INTO directory VALUES ('woodville', 'Woodville', 52.77, -1.53, 'UK', 'https://woodville.example.org')").run();
+    // The name and coordinates a ping sent are ignored.
+    await seed({ name: 'Typed in a ping', verifiedName: 'Woodville', slug: 'woodville', lat: 10, lng: 10, host: 'woodville.example.org' });
+    await seed({ name: 'Standard level', level: 'standard', slug: 'woodville' });
+    await seed({ name: 'Unverified', verified: false, slug: 'woodville' });
     const r = await call(fresh('/api/v1/public/map'));
     expect(r.body.cafes).toHaveLength(1);
     expect(r.body.cafes[0]).toMatchObject({
-      name: 'Woodville', lat: 52.77, lng: -1.53, host: 'woodville.example.org', placedBy: 'itself', verified: true,
+      name: 'Woodville',
+      url: 'https://woodville.example.org/',
+      lat: 52.77,
+      lng: -1.53,
+      host: 'woodville.example.org',
+      placedBy: 'its repaircafe.org listing',
+      verified: true,
     });
+  });
+
+  it('ignores the query string, so it cannot be used to skip the cache', async () => {
+    await call('/api/v1/public/summary');
+    await seed({ fixed: 1000 });
+    expect((await call('/api/v1/public/summary?skip=1')).body.repairsFixed).toBe(0);
   });
 
   it('places a café from its repaircafe.org listing, but never from a listing that names another site', async () => {

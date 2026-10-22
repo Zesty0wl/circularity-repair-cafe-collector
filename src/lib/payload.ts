@@ -76,11 +76,16 @@ export const pingSchema = z.object({
   kindsOfThing: z.array(kindOfThing).max(200).optional(),
 
   featuresInUse: z
-    .record(z.union([z.boolean(), count]))
+    .record(z.string().max(64).regex(/^[A-Za-z0-9_]+$/, 'expected a feature key'), z.union([z.boolean(), count]))
     .refine((v) => Object.keys(v).length <= 50, 'too many feature flags')
     .optional(),
 
   cafe: cafeDetails.optional(),
+
+  // A secret the hub made for itself. It publishes only the hash, on
+  // /api/public/telemetry, which ties this install to that site. Hubs before
+  // 1.13.2 do not send one.
+  claim: z.string().min(32).max(128).regex(/^[A-Za-z0-9_-]+$/).optional(),
 });
 
 export type Ping = z.infer<typeof pingSchema>;
