@@ -3,7 +3,7 @@ import { database } from '../db/index.js';
 import { installs, pings } from '../db/schema.js';
 import { numberVar, type Env } from '../env.js';
 import { cafeDetailsFor, pingSchema } from '../lib/payload.js';
-import { bearerFrom, countryFrom, hashToken, newToken, tokensMatch } from '../lib/tokens.js';
+import { bearerFrom, hashToken, newToken, tokensMatch } from '../lib/tokens.js';
 import { clientAddress, json, problem, readJson, tooMany } from '../lib/http.js';
 import { limitFor } from '../limiter.js';
 import { verifyIfDue } from '../services/verify.js';
@@ -32,12 +32,6 @@ const PINGS_PER_HOUR = 30;
 const NEW_INSTALLS_PER_HOUR = 3;
 const FORGETS_PER_HOUR = 10;
 
-/** cf.country is Cloudflare's idea of where the request came from. */
-function countryOf(request: Request): string | null {
-  const cf = (request as Request & { cf?: { country?: string } }).cf;
-  return countryFrom(cf?.country ?? request.headers.get('CF-IPCountry') ?? undefined);
-}
-
 export async function ping(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const address = clientAddress(request);
   const limiter = await limitFor(env, address);
@@ -61,7 +55,6 @@ export async function ping(request: Request, env: Env, ctx: ExecutionContext): P
 
   const db = database(env.DB);
   const presented = bearerFrom(request.headers.get('authorization') ?? undefined);
-  const country = countryOf(request);
   const cafe = cafeDetailsFor(body);
   const [existing] = await db.select().from(installs).where(eq(installs.id, body.installId)).limit(1);
 
@@ -96,7 +89,6 @@ export async function ping(request: Request, env: Env, ctx: ExecutionContext): P
         tokenHash: hashToken(issuedToken),
         appVersion: body.app.version,
         level: body.level,
-        country,
         cafeSlug: cafe.slug,
         cafeName: cafe.name,
         cafeUrl: cafe.url,
@@ -121,7 +113,6 @@ export async function ping(request: Request, env: Env, ctx: ExecutionContext): P
           lastSeenAt: new Date(),
           appVersion: body.app.version,
           level: body.level,
-          country: country ?? existing.country,
           // Dropping to Standard must clear what Community shared, or a
           // cafe that changed its mind would stay on the map.
           cafeSlug: cafe.slug,

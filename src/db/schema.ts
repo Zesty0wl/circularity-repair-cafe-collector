@@ -28,8 +28,10 @@ export const installs = sqliteTable(
     /** 'standard' or 'community'. What the install agreed to send. */
     level: text('level').notNull().default('standard'),
     /**
-     * Two letters from Cloudflare's idea of where the request came from. We
-     * never keep the address itself, only which country it was in.
+     * Two letters, from the country in the cafe's own repaircafe.org listing.
+     * Null when it has not linked one. It used to come from where the ping was
+     * sent from, but a hub is a Worker, and that is just a Cloudflare data
+     * centre. See placeFromListing() and services/verify.ts.
      */
     country: text('country'),
     // ── Only set at the Community level ──────────────────────────────

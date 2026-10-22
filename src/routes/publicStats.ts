@@ -2,7 +2,7 @@ import { sql } from 'drizzle-orm';
 import { database } from '../db/index.js';
 import type { Env } from '../env.js';
 import { json } from '../lib/http.js';
-import { haveDirectory, lookupSlug, refreshDirectory } from '../services/directory.js';
+import { haveDirectory, placeFromListing, refreshDirectory } from '../services/directory.js';
 
 /**
  * What the community has done, in public
@@ -135,30 +135,19 @@ export async function map(request: Request, env: Env, ctx: ExecutionContext): Pr
       }
     }
 
-    // Where the pin comes from.
-    //
-    // Own coordinates win. Otherwise the repaircafe.org listing may supply
-    // them, but ONLY when the website that listing names is the same host we
-    // just verified. Without that check a cafe could prove it controls its own
-    // domain and then claim somebody else's slug to borrow their address. The
-    // directory is a convenience here, never a credential: `external_link` is
-    // free text a cafe typed in years ago.
+    // Where the pin comes from. Own coordinates win. Otherwise the cafe's
+    // repaircafe.org listing may supply them, under the rule in
+    // placeFromListing(): never from a listing that belongs to another site.
     const cafes = await Promise.all(
       rows.map(async (r: any) => {
         let lat = r.cafe_lat === null ? null : Number(r.cafe_lat);
         let lng = r.cafe_lng === null ? null : Number(r.cafe_lng);
         let placedBy: 'itself' | 'its repaircafe.org listing' | null = lat === null ? null : 'itself';
-        if (lat === null && r.cafe_slug && r.verified_host) {
-          const listed = await lookupSlug(db, r.cafe_slug);
-          let listedHost: string | null = null;
-          try {
-            listedHost = listed?.website ? new URL(listed.website).hostname.toLowerCase() : null;
-          } catch {
-            listedHost = null;
-          }
-          if (listedHost && listedHost === String(r.verified_host).toLowerCase()) {
-            lat = listed!.lat;
-            lng = listed!.lng;
+        if (lat === null) {
+          const place = await placeFromListing(db, r.cafe_slug, r.verified_host);
+          if (place) {
+            lat = place.lat;
+            lng = place.lng;
             placedBy = 'its repaircafe.org listing';
           }
         }

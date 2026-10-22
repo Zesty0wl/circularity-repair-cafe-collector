@@ -23,7 +23,9 @@ describe('first contact', () => {
     const row = await env.DB.prepare('SELECT * FROM installs WHERE id = ?').bind(ID).first<any>();
     expect(row.token_hash).toMatch(/^[0-9a-f]{64}$/);
     expect(row.token_hash).not.toContain(token);
-    expect(row.country).toBe('GB');
+    // Not from where the ping came from: a hub's ping leaves from a Cloudflare
+    // data centre. The country comes from the cafe's listing at its check.
+    expect(row.country).toBeNull();
     expect(row.level).toBe('standard');
     const pings = await env.DB.prepare('SELECT * FROM pings WHERE install_id = ?').bind(ID).all<any>();
     expect(pings.results).toHaveLength(1);

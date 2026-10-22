@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import type { DB } from '../db/index.js';
 import { installs } from '../db/schema.js';
+import { placeFromListing } from './directory.js';
 import type { Env } from '../env.js';
 
 /**
@@ -192,6 +193,12 @@ export async function verifyIfDue(db: DB, env: Env, installId: string, publicUrl
     }
 
     const outcome = await verifyInstall(installId, publicUrl);
+    // The country comes from the cafe's own repaircafe.org listing, under the
+    // same rule as its pin. Only Community cafes link one. Where a request
+    // came from tells us nothing: hubs are Workers, and their requests leave
+    // from whichever Cloudflare data centre ran them.
+    const place =
+      outcome.ok && row.level === 'community' ? await placeFromListing(db, row.cafeSlug, outcome.host) : null;
     await db
       .update(installs)
       .set({
@@ -199,6 +206,7 @@ export async function verifyIfDue(db: DB, env: Env, installId: string, publicUrl
         verifiedHost: outcome.ok ? (outcome.host ?? null) : null,
         verifyCheckedAt: new Date(),
         verifyError: outcome.ok ? null : (outcome.error ?? 'the check failed'),
+        ...(outcome.ok ? { country: place?.country ?? null } : {}),
         // The figures we publish are the ones we fetched ourselves, not the
         // ones we were handed. Two numbers minutes apart would disagree, and
         // the fetched one is the only one anybody can check.

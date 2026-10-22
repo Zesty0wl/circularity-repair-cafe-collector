@@ -36,8 +36,11 @@ A ping that claims Standard but carries cafe details has them thrown away here
 rather than trusted, so a client bug cannot put somebody on a public map.
 
 Never received or stored: names of people, anything about a visitor, item
-descriptions, notes, photos, or a raw IP address. The country comes from
-Cloudflare (`request.cf.country`), so no address is ever kept. The hourly rate
+descriptions, notes, photos, or a raw IP address. A Community cafe's country
+comes from its own repaircafe.org listing, under the same rule as its pin (see
+`placeFromListing()` in `services/directory.ts`). Other installs have none:
+where a ping came from says nothing, because hubs are Workers and their
+requests leave from any Cloudflare data centre. The hourly rate
 limits are counted in a Durable Object named by a keyed hash of the address,
 and wiped an hour after the last request.
 
@@ -157,7 +160,8 @@ src/
   limiter.ts            hourly limits per address, in a Durable Object
   db/schema.ts          installs, pings, directory (drizzle, matching migrations/)
   lib/payload.ts        what a hub may send, and nothing else
-  lib/tokens.ts         issue, hash, compare; country from Cloudflare
+  lib/tokens.ts         issue, hash, compare
+  lib/country.ts        two-letter codes from the country in a listing address
   lib/http.ts           JSON answers and reading a body with a ceiling
   routes/ping.ts        ingest and forget
   routes/publicStats.ts summary and map

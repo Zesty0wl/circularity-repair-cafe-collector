@@ -27,18 +27,3 @@ export function bearerFrom(header: string | undefined): string | null {
   const match = /^Bearer\s+(.+)$/i.exec(header.trim());
   return match ? match[1]!.trim() : null;
 }
-
-/**
- * Two letters from Cloudflare's country header, or null.
- *
- * We are behind Cloudflare, so this arrives for free and we never have to
- * store an address to work out roughly where an install is. "XX" and "T1"
- * are Cloudflare's own values for unknown and Tor, and mean nothing to us.
- */
-export function countryFrom(header: string | string[] | undefined): string | null {
-  const value = Array.isArray(header) ? header[0] : header;
-  if (!value) return null;
-  const code = value.trim().toUpperCase();
-  if (!/^[A-Z]{2}$/.test(code) || code === 'XX' || code === 'T1') return null;
-  return code;
-}

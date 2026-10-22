@@ -85,6 +85,17 @@ describe('after a ping', () => {
     });
   });
 
+  it("takes a Community café's country from its own listing", async () => {
+    fetchSpy().mockImplementation(async () => hubAnswer(ID));
+    await env.DB.prepare("INSERT INTO directory VALUES ('repair-cafe-villeneuve-loubet', 'Repair Café Villeneuve-Loubet', 43.66, 7.12, 'France', NULL)").run();
+    await env.DB.prepare(
+      "INSERT INTO installs (id, token_hash, created_at, last_seen_at, level, cafe_slug, country) VALUES (?, 'x', ?, ?, 'community', 'repair-cafe-villeneuve-loubet', 'BR')",
+    ).bind(ID, Date.now(), Date.now()).run();
+    await verifyIfDue(database(env.DB), env, ID, 'https://hub.example.workers.dev');
+    const row = await env.DB.prepare('SELECT country, verified_host FROM installs WHERE id = ?').bind(ID).first<any>();
+    expect(row).toEqual({ country: 'FR', verified_host: 'hub.example.workers.dev' });
+  });
+
   it('records why a check failed, and waits before looking again', async () => {
     const spy = fetchSpy().mockImplementation(async () => new Response('', { status: 500 }));
     const db = database(env.DB);

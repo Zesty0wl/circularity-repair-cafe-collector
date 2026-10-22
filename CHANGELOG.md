@@ -2,6 +2,28 @@
 
 Notable changes to the Repair Cafe Hub telemetry collector. Newest first.
 
+## 3.1.0 — 22 October 2026
+
+### Fixed
+
+- **Countries were wrong.** The collector took a hub's country from where its
+  ping came from. Hubs are Cloudflare Workers, so that was whichever data
+  centre sent it: a cafe in England was recorded as Brazil. A Community cafe's
+  country now comes from its own repaircafe.org listing, as a two-letter code
+  ("France", "Nederland" and "UK" all work). Other installs have no country.
+  Migration `0002_country_from_listing` forgets every old country, and each
+  Community cafe gets its own back at its next check.
+
+### Changed
+
+- **A listing with no website can place a pin.** Before, a cafe's listing was
+  only used when its website was the hub we verified. Many listings name no
+  website, so those cafes never got a pin. Now a listing is used when its
+  website is the verified hub, ignoring "www.", or when it names none. A
+  listing that names a different site, or a website we cannot read, is still
+  refused, so nobody can borrow another cafe's listing. The rule lives in one
+  place, `placeFromListing()`, and the map and the country both use it.
+
 ## 3.0.0 — 21 October 2026
 
 ### Changed

@@ -96,7 +96,7 @@ describe('map', () => {
     });
   });
 
-  it('places a café from its repaircafe.org listing only when that listing names the verified host', async () => {
+  it('places a café from its repaircafe.org listing, but never from a listing that names another site', async () => {
     await env.DB.batch([
       env.DB.prepare("INSERT INTO directory VALUES ('ours', 'Ours', 51.5, -0.12, 'UK', 'https://ours.example.org/')"),
       env.DB.prepare("INSERT INTO directory VALUES ('theirs', 'Theirs', 48.85, 2.35, 'France', 'https://theirs.example.org')"),
@@ -107,5 +107,19 @@ describe('map', () => {
     const r = await call(fresh('/api/v1/public/map'));
     expect(r.body.cafes).toHaveLength(1);
     expect(r.body.cafes[0]).toMatchObject({ name: 'Ours', lat: 51.5, lng: -0.12, placedBy: 'its repaircafe.org listing' });
+  });
+
+  it('also places a café whose listing names no website, or the same site with "www."', async () => {
+    await env.DB.batch([
+      env.DB.prepare("INSERT INTO directory VALUES ('no-site', 'No site', 43.66, 7.12, 'France', NULL)"),
+      env.DB.prepare("INSERT INTO directory VALUES ('www-site', 'Www site', 52.0, 4.3, 'Nederland', 'www.wwwsite.example.org')"),
+      env.DB.prepare("INSERT INTO directory VALUES ('bad-site', 'Bad site', 50.0, 3.0, 'Belgique', 'see our facebook page')"),
+    ]);
+    await seed({ name: 'No site', slug: 'no-site', host: 'hub.example.workers.dev' });
+    await seed({ name: 'Www site', slug: 'www-site', host: 'wwwsite.example.org' });
+    // A website we cannot read is refused, not guessed at.
+    await seed({ name: 'Bad site', slug: 'bad-site', host: 'bad.example.org' });
+    const r = await call(fresh('/api/v1/public/map'));
+    expect(r.body.cafes.map((c: any) => c.name)).toEqual(['No site', 'Www site']);
   });
 });

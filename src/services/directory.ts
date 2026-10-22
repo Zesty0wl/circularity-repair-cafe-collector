@@ -1,6 +1,7 @@
 import { eq, sql } from 'drizzle-orm';
 import type { DB } from '../db/index.js';
 import { directory } from '../db/schema.js';
+import { countryCode } from '../lib/country.js';
 
 /**
  * Where the pins come from
@@ -144,4 +145,47 @@ export async function lookupSlug(db: DB, slug: string | null | undefined): Promi
     .limit(1);
   if (!row) return null;
   return { name: row.name, lat: row.lat, lng: row.lng, country: row.country, website: row.website };
+}
+
+/** Where a verified hub's own listing puts it, and which country that is. */
+export interface ListedPlace {
+  lat: number;
+  lng: number;
+  country: string | null;
+}
+
+/** The host a listing's website names, without "www.", or null when it names none. */
+function listedHost(website: string | null): string | null | 'unreadable' {
+  const raw = (website ?? '').trim();
+  if (!raw) return null;
+  try {
+    const url = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : `https://${raw}`);
+    return url.hostname.toLowerCase().replace(/^www\./, '');
+  } catch {
+    return 'unreadable';
+  }
+}
+
+/**
+ * Where a verified hub is, from the repaircafe.org listing it linked, but only
+ * when that listing can be its own.
+ *
+ * A slug is only a claim, so a hub that proved its own domain could otherwise
+ * claim somebody else's listing and borrow their address. We accept the
+ * listing when its website is the host we verified, or when it names no
+ * website at all. A listing that names a different site belongs to that site,
+ * and one whose website we cannot read is refused rather than guessed at.
+ */
+export async function placeFromListing(
+  db: DB,
+  slug: string | null | undefined,
+  verifiedHost: string | null | undefined,
+): Promise<ListedPlace | null> {
+  if (!slug || !verifiedHost) return null;
+  const listed = await lookupSlug(db, slug);
+  if (!listed) return null;
+  const host = listedHost(listed.website);
+  if (host === 'unreadable') return null;
+  if (host !== null && host !== verifiedHost.toLowerCase().replace(/^www\./, '')) return null;
+  return { lat: listed.lat, lng: listed.lng, country: countryCode(listed.country) };
 }
